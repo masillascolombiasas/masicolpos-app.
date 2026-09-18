@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MasiColPos — Control de pedidos y producción</title>
+<link rel="icon" href="https://cvdc.com.co/wp-content/uploads/2026/09/Recurso-3-scaled.png">
+
+<!-- Firebase (compat SDK: funciona con script tags simples, sin bundlers) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --navy: #1E3245;
+    --navy-deep: #16242F;
+    --paper: #F6F4EF;
+    --card: #FFFFFF;
+    --line: #DCD6C9;
+    --ink: #23282B;
+    --ink-soft: #5B6368;
+    --clay: #B5522E;
+    --lime: #4C7A5A;
+    --amber: #A9761E;
+    --radius: 10px;
+    font-size: 16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    min-height:100vh;
+  }
+  h1,h2,h3{
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    margin: 0 0 .3em 0;
+    color: var(--navy-deep);
+  }
+  button{
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    border-radius: var(--radius);
+    padding: .65em 1.2em;
+    font-size: .95rem;
+    transition: transform .08s ease, box-shadow .15s ease;
+  }
+  button:active{ transform: scale(.98); }
+  button.primary{ background: var(--navy); color:#fff; }
+  button.primary:hover{ background: var(--navy-deep); }
+  button.ghost{ background: transparent; color: var(--navy); border:1px solid var(--line); }
+  button.ghost:hover{ background: #EFEAE0; }
+  button.danger{ background: var(--clay); color:#fff; }
+  button.small{ padding: .35em .8em; font-size: .82rem; }
+  input, select, textarea{
+    font-family: inherit;
+    font-size: .95rem;
+    padding: .55em .7em;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    width: 100%;
+  }
+  label{ font-size:.82rem; color:var(--ink-soft); display:block; margin-bottom:.25em; }
+  .field{ margin-bottom: .9em; }
+  a{ color: var(--navy); }
+
+  /* ---------- LOGIN ---------- */
+  #login-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: var(--navy-deep);
+    padding: 20px;
+  }
+  .login-card{
+    background: var(--card); border-radius: 14px; padding: 2.4em 2.2em;
+    width: 100%; max-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    text-align:center;
+  }
+  .login-card img{ width: 76px; margin-bottom: .6em; }
+  .login-card h1{ font-size: 1.4rem; }
+  .login-card p.tag{ color: var(--ink-soft); font-size:.85rem; margin-top:0; margin-bottom:1.4em; }
+  #login-error{ color: var(--clay); font-size: .85rem; min-height: 1.2em; margin-top:.4em; }
+
+  /* ---------- APP SHELL ---------- */
+  #app{ display:none; min-height:100vh; }
+  header.topbar{
+    background: var(--navy-deep); color:#fff; padding: .7em 1.2em;
+    display:flex; align-items:center; justify-content:space-between; gap:1em;
+  }
+  header.topbar .brand{ display:flex; align-items:center; gap:.6em; }
+  header.topbar img{ width:34px; }
+  header.topbar .brand-text{ font-family: Georgia, serif; font-size:1.1rem; }
+  header.topbar .who{ font-size:.82rem; opacity:.85; text-align:right; }
+  header.topbar .who b{ display:block; font-size:.9rem; }
+
+  .layout{ display:flex; min-height: calc(100vh - 56px); }
+  nav.sidebar{
+    width: 210px; background: #EFEAE0; border-right:1px solid var(--line);
+    padding: 1em .6em; flex-shrink:0;
+  }
+  nav.sidebar button{
+    display:block; width:100%; text-align:left; background:none; color:var(--ink);
+    padding:.6em .8em; margin-bottom:.2em; border-radius:8px; font-size:.9rem;
+  }
+  nav.sidebar button.active{ background: var(--navy); color:#fff; }
+  nav.sidebar button:hover:not(.active){ background:#e2ddd0; }
+
+  main.content{ flex:1; padding: 1.6em 2em; overflow-x:auto; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .card{
+    background: var(--card); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 1.3em 1.4em; margin-bottom: 1.2em;
+  }
+  .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap: 0 1em; }
+  @media (max-width: 640px){ .grid2{ grid-template-columns: 1fr; } nav.sidebar{width:150px;} main.content{padding:1em;} }
+
+  table{ width:100%; border-collapse: collapse; font-size:.88rem; }
+  th, td{ text-align:left; padding: .55em .6em; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th{ color: var(--ink-soft); font-weight:600; font-size:.78rem; text-transform: none; }
+  tr:hover td{ background: #FBFAF6; }
+
+  .badge{ display:inline-block; padding:.2em .6em; border-radius: 20px; font-size:.75rem; font-weight:600; }
+  .badge.programado{ background:#E8E2D2; color:#6B5E3C; }
+  .badge.en_ruta{ background:#DCE6EE; color:#2E5170; }
+  .badge.entregado{ background:#E1EEE4; color:var(--lime); }
+  .badge.no_entregado{ background:#F3DEDA; color:var(--clay); }
+  .badge.credito{ background:#F1E6D2; color:var(--amber); }
+  .badge.contado{ background:#E3EAE6; color:#3A6650; }
+
+  .empty{ color: var(--ink-soft); font-style: italic; padding: 1em 0; }
+  .stat{ display:flex; gap:1em; flex-wrap:wrap; }
+  .stat .box{ background:#fff; border:1px solid var(--line); border-radius: var(--radius); padding:1em 1.4em; min-width:150px; }
+  .stat .box .num{ font-family: Georgia, serif; font-size:2rem; color: var(--navy-deep); }
+  .stat .box .lbl{ font-size:.8rem; color: var(--ink-soft); }
+
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background: rgba(20,25,28,.55);
+    align-items:center; justify-content:center; z-index:50; padding: 1em;
+  }
+  .modal-overlay.active{ display:flex; }
+  .modal{ background:#fff; border-radius: 12px; padding: 1.6em; width:100%; max-width:420px; max-height:90vh; overflow-y:auto; }
+  .modal h3{ margin-bottom: .8em; }
+  .modal-actions{ display:flex; gap:.6em; justify-content:flex-end; margin-top:1.2em; }
+
+  .toast{
+    position:fixed; bottom:20px; right:20px; background: var(--navy-deep); color:#fff;
+    padding: .8em 1.2em; border-radius: 8px; font-size:.88rem; z-index:100;
+    opacity:0; transform: translateY(10px); transition: all .25s ease; pointer-events:none;
+  }
+  .toast.show{ opacity:1; transform: translateY(0); }
+
+  .setup-warning{
+    background:#FBF1D8; border:1px solid #E4C878; color:#6B5A20; padding:1em 1.2em;
+    border-radius: var(--radius); margin: 1em; font-size:.88rem;
+  }
+  .hist-entry{ font-size:.82rem; padding:.4em 0; border-bottom:1px dashed var(--line); color: var(--ink-soft); }
+  .hist-entry b{ color: var(--ink); }
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP WARNING (se oculta solo si Firebase está configurado) ============ -->
+<div id="setup-warning" class="setup-warning" style="display:none;">
+  ⚠️ Falta configurar Firebase. Abre este archivo y reemplaza el objeto <code>firebaseConfig</code> cerca del final con las claves de tu proyecto (ver instrucciones que te di aparte).
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div id="login-screen">
+  <div class="login-card">
+    <img src="https://cvdc.com.co/wp-content/uploads/2026/09/Recurso-3-scaled.png" alt="Masillas Colombia">
+    <h1>MasiColPos</h1>
+    <p class="tag">Control de pedidos, entregas y producción</p>
+    <div class="field">
+      <label>Usuario</label>
+      <input id="login-user" type="text" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input id="login-pass" type="password" autocomplete="current-password">
+    </div>
+    <button class="primary" style="width:100%" onclick="handleLogin()">Ingresar</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <img src="https://cvdc.com.co/wp-content/uploads/2026/09/Recurso-3-scaled.png" alt="">
+      <span class="brand-text">MasiColPos</span>
+    </div>
+    <div class="who">
+      <b id="who-name">—</b>
+      <span id="who-role">—</span>
+      · <a href="#" onclick="handleLogout();return false;" style="color:#fff;">Cerrar sesión</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar"></nav>
+    <main class="content">
+
+      <!-- PEDIDOS -->
+      <section class="view" id="view-pedidos">
+        <h2>Pedidos</h2>
+        <div class="card" id="form-pedido-card">
+          <h3>Cargar nuevo pedido</h3>
+          <div class="grid2">
+            <div class="field"><label>Cliente</label><input id="np-cliente"></div>
+            <div class="field"><label>Dirección de entrega</label><input id="np-direccion"></div>
+            <div class="field"><label>Cantidad de bolsas</label><input id="np-cantidad" type="number" min="1"></div>
+            <div class="field"><label>Valor por bolsa (COP)</label><input id="np-valor" type="number" min="0"></div>
+            <div class="field"><label>Forma de pago</label>
+              <select id="np-formapago" onchange="toggleCreditoFields()">
+                <option value="contado">Contado</option>
+                <option value="credito">Crédito (hasta 3 pagos)</option>
+              </select>
+            </div>
+            <div class="field"><label>Fecha programada</label><input id="np-fecha" type="date"></div>
+            <div class="field"><label>Asignar a repartidor</label>
+              <select id="np-asignado"><option value="">Sin asignar todavía</option></select>
+            </div>
+          </div>
+          <button class="primary" onclick="crearPedido()">Cargar pedido</button>
+        </div>
+
+        <div class="card">
+          <h3>Pedidos registrados</h3>
+          <div id="tabla-pedidos"></div>
+        </div>
+      </section>
+
+      <!-- MIS ENTREGAS -->
+      <section class="view" id="view-entregas">
+        <h2>Mis entregas</h2>
+        <div id="tabla-entregas"></div>
+      </section>
+
+      <!-- PRODUCCIÓN -->
+      <section class="view" id="view-produccion">
+        <h2>Producción diaria</h2>
+        <div class="card">
+          <h3>Registrar bolsas fabricadas</h3>
+          <div class="grid2">
+            <div class="field"><label>Fecha</label><input id="prod-fecha" type="date"></div>
+            <div class="field"><label>Cantidad de bolsas</label><input id="prod-cantidad" type="number" min="1"></div>
+          </div>
+          <button class="primary" onclick="registrarProduccion()">Registrar</button>
+        </div>
+        <div class="card">
+          <h3>Registros recientes</h3>
+          <div id="tabla-produccion"></div>
+        </div>
+      </section>
+
+      <!-- INVENTARIO -->
+      <section class="view" id="view-inventario">
+        <h2>Inventario</h2>
+        <div class="stat">
+          <div class="box"><div class="num" id="inv-producido">0</div><div class="lbl">Bolsas fabricadas (total)</div></div>
+          <div class="box"><div class="num" id="inv-entregado">0</div><div class="lbl">Bolsas entregadas (total)</div></div>
+          <div class="box"><div class="num" id="inv-disponible">0</div><div class="lbl">Disponibles en bodega</div></div>
+        </div>
+      </section>
+
+      <!-- USUARIOS -->
+      <section class="view" id="view-usuarios">
+        <h2>Usuarios</h2>
+        <div class="card">
+          <h3>Crear usuario</h3>
+          <div class="grid2">
+            <div class="field"><label>Nombre completo</label><input id="nu-nombre"></div>
+            <div class="field"><label>Usuario (login)</label><input id="nu-usuario"></div>
+            <div class="field"><label>Contraseña</label><input id="nu-pass" type="text"></div>
+            <div class="field"><label>Rol</label>
+              <select id="nu-rol">
+                <option value="admin">Administrador</option>
+                <option value="operario">Operario de producción</option>
+                <option value="domiciliario">Domiciliario / repartidor</option>
+                <option value="superadmin">Súper administrador</option>
+              </select>
+            </div>
+          </div>
+          <button class="primary" onclick="crearUsuario()">Crear usuario</button>
+        </div>
+        <div class="card">
+          <h3>Usuarios existentes</h3>
+          <div id="tabla-usuarios"></div>
+        </div>
+      </section>
+
+      <!-- HISTORIAL -->
+      <section class="view" id="view-historial">
+        <h2>Historial de cambios</h2>
+        <div class="card">
+          <div id="lista-historial"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ============ MODAL: confirmar entrega ============ -->
+<div class="modal-overlay" id="modal-entrega">
+  <div class="modal">
+    <h3>Confirmar entrega</h3>
+    <input type="hidden" id="me-pedido-id">
+    <div class="field">
+      <label>Resultado</label>
+      <select id="me-estado" onchange="toggleMetodoPago()">
+        <option value="entregado">Entregado</option>
+        <option value="no_entregado">No entregado</option>
+      </select>
+    </div>
+    <div id="me-metodo-wrap" class="field">
+      <label>Método de pago recibido</label>
+      <select id="me-metodo">
+        <option value="efectivo">Efectivo</option>
+        <option value="transferencia">Transferencia</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="cerrarModal('modal-entrega')">Cancelar</button>
+      <button class="primary" onclick="confirmarEntrega()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: registrar abono ============ -->
+<div class="modal-overlay" id="modal-abono">
+  <div class="modal">
+    <h3>Registrar abono</h3>
+    <input type="hidden" id="ab-pedido-id">
+    <p id="ab-saldo-info" style="font-size:.88rem;color:var(--ink-soft);"></p>
+    <div class="field"><label>Monto abonado (COP)</label><input id="ab-monto" type="number" min="0"></div>
+    <div class="field"><label>Método de pago</label>
+      <select id="ab-metodo"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="cerrarModal('modal-abono')">Cancelar</button>
+      <button class="primary" onclick="guardarAbono()">Guardar abono</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: editar pedido entregado (solo súper admin) ============ -->
+<div class="modal-overlay" id="modal-editar-superadmin">
+  <div class="modal">
+    <h3>Editar pedido entregado</h3>
+    <p style="font-size:.82rem;color:var(--clay);">Esta acción queda registrada en el historial con tu usuario y el motivo que escribas.</p>
+    <input type="hidden" id="ed-pedido-id">
+    <div class="field"><label>Cantidad de bolsas</label><input id="ed-cantidad" type="number" min="1"></div>
+    <div class="field"><label>Estado</label>
+      <select id="ed-estado">
+        <option value="entregado">Entregado</option>
+        <option value="no_entregado">No entregado</option>
+        <option value="programado">Programado</option>
+        <option value="en_ruta">En ruta</option>
+      </select>
+    </div>
+    <div class="field"><label>Motivo del cambio (obligatorio)</label><textarea id="ed-motivo" rows="2"></textarea></div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="cerrarModal('modal-editar-superadmin')">Cancelar</button>
+      <button class="danger" onclick="guardarEdicionSuperadmin()">Guardar cambio</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================================================================
+   MasiColPos — lógica de la aplicación
+   ====================================================================== */
+
+/* ---------- 1. CONFIGURA AQUÍ TU PROYECTO DE FIREBASE ----------
+   Reemplaza estos valores por los de tu proyecto (Firebase Console →
+   Configuración del proyecto → Tus apps → SDK setup and configuration).
+   Instrucciones completas al final del mensaje donde te entregué este
+   archivo. */
+const firebaseConfig = {
+  apiKey: "AIzaSyD5nQo_1lOFc9zwHCssysnJNJV81_oq3P0",
+  authDomain: "mascolpos.firebaseapp.com",
+  projectId: "mascolpos",
+  storageBucket: "mascolpos.firebasestorage.app",
+  messagingSenderId: "733471400097",
+  appId: "1:733471400097:web:df8a259dd57fe708b190e0"
+};
+/* ---------------------------------------------------------------- */
+
+let db = null;
+let firebaseReady = false;
+try{
+  if(firebaseConfig.apiKey !== "REEMPLAZA_ESTO"){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+  }
+}catch(e){ console.error("Error iniciando Firebase:", e); }
+
+if(!firebaseReady){
+  document.getElementById('setup-warning').style.display = 'block';
+}
+
+/* ---------- utilidades ---------- */
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function fmtCOP(n){
+  return '$' + Math.round(n||0).toLocaleString('es-CO');
+}
+function hoyISO(){
+  return new Date().toISOString().slice(0,10);
+}
+async function sha256(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function nowLabel(){
+  return new Date().toLocaleString('es-CO');
+}
+
+const ROLE_LABEL = {
+  superadmin: 'Súper administrador',
+  admin: 'Administrador',
+  operario: 'Operario de producción',
+  domiciliario: 'Domiciliario'
+};
+const ESTADO_LABEL = {
+  programado: 'Programado', en_ruta: 'En ruta',
+  entregado: 'Entregado', no_entregado: 'No entregado'
+};
+
+/* ---------- estado en memoria ---------- */
+let currentUser = null; // {id, nombre, usuario, rol}
+let cache = { usuarios: [], pedidos: [], produccion: [] };
+
+/* ============ AUTENTICACIÓN (propia, sobre Firestore) ============
+   Nota de seguridad: este login compara la contraseña con un hash
+   SHA-256 guardado en Firestore. Es apropiado para una herramienta
+   interna de equipo pequeño, pero no reemplaza un sistema de
+   autenticación de nivel bancario. Si más adelante quieres subir el
+   nivel de seguridad, se puede migrar a Firebase Authentication. */
+
+async function handleLogin(){
+  const usuario = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const errBox = document.getElementById('login-error');
+  errBox.textContent = '';
+  if(!firebaseReady){
+    errBox.textContent = 'Firebase no está configurado todavía.';
+    return;
+  }
+  if(!usuario || !pass){ errBox.textContent = 'Ingresa usuario y contraseña.'; return; }
+
+  try{
+    const snap = await db.collection('usuarios').where('usuario','==',usuario).limit(1).get();
+    if(snap.empty){ errBox.textContent = 'Usuario o contraseña incorrectos.'; return; }
+    const doc = snap.docs[0];
+    const data = doc.data();
+    const hash = await sha256(pass);
+    if(hash !== data.passwordHash){ errBox.textContent = 'Usuario o contraseña incorrectos.'; return; }
+
+    currentUser = { id: doc.id, nombre: data.nombre, usuario: data.usuario, rol: data.rol };
+    localStorage.setItem('masicolpos_session', JSON.stringify(currentUser));
+    entrarApp();
+  }catch(e){
+    console.error(e);
+    errBox.textContent = 'Error de conexión. Revisa tu configuración de Firebase.';
+  }
+}
+
+function handleLogout(){
+  currentUser = null;
+  localStorage.removeItem('masicolpos_session');
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+}
+
+/* Restaurar sesión si ya había una activa en este dispositivo */
+window.addEventListener('load', ()=>{
+  const saved = localStorage.getItem('masicolpos_session');
+  if(saved && firebaseReady){
+    currentUser = JSON.parse(saved);
+    entrarApp();
+  }
+  const today = hoyISO();
+  document.getElementById('np-fecha').value = today;
+  document.getElementById('prod-fecha').value = today;
+});
+
+/* ============ ENTRAR A LA APP / NAVEGACIÓN POR ROL ============ */
+const NAV_BY_ROLE = {
+  superadmin: [
+    ['pedidos','Pedidos'], ['entregas','Mis entregas'], ['produccion','Producción'],
+    ['inventario','Inventario'], ['usuarios','Usuarios'], ['historial','Historial']
+  ],
+  admin: [
+    ['pedidos','Pedidos'], ['produccion','Producción'], ['inventario','Inventario']
+  ],
+  operario: [
+    ['produccion','Producción'], ['inventario','Inventario']
+  ],
+  domiciliario: [
+    ['entregas','Mis entregas']
+  ]
+};
+
+function entrarApp(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('who-name').textContent = currentUser.nombre;
+  document.getElementById('who-role').textContent = ROLE_LABEL[currentUser.rol] || currentUser.rol;
+
+  // Mostrar/ocultar el formulario de crear pedido según rol
+  document.getElementById('form-pedido-card').style.display =
+    (currentUser.rol==='admin'||currentUser.rol==='superadmin') ? 'block' : 'none';
+
+  buildSidebar();
+  cargarTodo();
+}
+
+function buildSidebar(){
+  const nav = NAV_BY_ROLE[currentUser.rol] || [];
+  const sidebar = document.getElementById('sidebar');
+  sidebar.innerHTML = '';
+  nav.forEach(([key,label], i)=>{
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.onclick = ()=>mostrarVista(key, btn);
+    if(i===0) btn.classList.add('active');
+    sidebar.appendChild(btn);
+  });
+  if(nav.length) mostrarVista(nav[0][0]);
+}
+
+function mostrarVista(key, btnEl){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+key).classList.add('active');
+  document.querySelectorAll('nav.sidebar button').forEach(b=>b.classList.remove('active'));
+  if(btnEl) btnEl.classList.add('active');
+  else {
+    // encontrar y activar el botón correspondiente
+    const idx = (NAV_BY_ROLE[currentUser.rol]||[]).findIndex(n=>n[0]===key);
+    const btns = document.querySelectorAll('nav.sidebar button');
+    if(btns[idx]) btns[idx].classList.add('active');
+  }
+}
+
+/* ============ CARGA DE DATOS (tiempo real con Firestore) ============ */
+function cargarTodo(){
+  db.collection('usuarios').onSnapshot(snap=>{
+    cache.usuarios = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderUsuarios();
+    renderSelectAsignado();
+  });
+  db.collection('pedidos').orderBy('creadoEn','desc').onSnapshot(snap=>{
+    cache.pedidos = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderPedidos();
+    renderEntregas();
+    renderInventario();
+  });
+  db.collection('produccion').orderBy('fecha','desc').onSnapshot(snap=>{
+    cache.produccion = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderProduccion();
+    renderInventario();
+  });
+  db.collection('historial').orderBy('fecha','desc').limit(200).onSnapshot(snap=>{
+    renderHistorial(snap.docs.map(d=>d.data()));
+  });
+}
+
+async function registrarHistorial(accion, detalle){
+  try{
+    await db.collection('historial').add({
+      accion, detalle,
+      usuario: currentUser.nombre, rol: currentUser.rol,
+      fecha: firebase.firestore.FieldValue.serverTimestamp(),
+      fechaLabel: nowLabel()
+    });
+  }catch(e){ console.error('No se pudo registrar historial', e); }
+}
+
+/* ============ USUARIOS ============ */
+function renderSelectAsignado(){
+  const sel = document.getElementById('np-asignado');
+  const repartidores = cache.usuarios.filter(u=>u.rol==='domiciliario');
+  sel.innerHTML = '<option value="">Sin asignar todavía</option>' +
+    repartidores.map(r=>`<option value="${r.id}">${r.nombre}</option>`).join('');
+}
+
+async function crearUsuario(){
+  const nombre = document.getElementById('nu-nombre').value.trim();
+  const usuario = document.getElementById('nu-usuario').value.trim();
+  const pass = document.getElementById('nu-pass').value;
+  const rol = document.getElementById('nu-rol').value;
+  if(!nombre || !usuario || !pass){ toast('Completa todos los campos.'); return; }
+
+  const existe = cache.usuarios.find(u=>u.usuario===usuario);
+  if(existe){ toast('Ese usuario ya existe.'); return; }
+
+  const passwordHash = await sha256(pass);
+  await db.collection('usuarios').add({ nombre, usuario, passwordHash, rol });
+  await registrarHistorial('Usuario creado', `${nombre} (${ROLE_LABEL[rol]}) — usuario "${usuario}"`);
+  toast('Usuario creado.');
+  document.getElementById('nu-nombre').value='';
+  document.getElementById('nu-usuario').value='';
+  document.getElementById('nu-pass').value='';
+}
+
+async function eliminarUsuario(id, nombre){
+  if(!confirm(`¿Eliminar a ${nombre}? Esta acción no se puede deshacer.`)) return;
+  await db.collection('usuarios').doc(id).delete();
+  await registrarHistorial('Usuario eliminado', nombre);
+  toast('Usuario eliminado.');
+}
+
+function renderUsuarios(){
+  const el = document.getElementById('tabla-usuarios');
+  if(!el) return;
+  if(!cache.usuarios.length){ el.innerHTML = '<p class="empty">Aún no hay usuarios creados.</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th></th></tr></thead><tbody>
+    ${cache.usuarios.map(u=>`<tr>
+      <td>${u.nombre}</td><td>${u.usuario}</td><td>${ROLE_LABEL[u.rol]||u.rol}</td>
+      <td><button class="ghost small" onclick="eliminarUsuario('${u.id}','${u.nombre.replace(/'/g,"")}')">Eliminar</button></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+/* ============ PEDIDOS ============ */
+function toggleCreditoFields(){ /* reservado para futuras validaciones visuales */ }
+
+async function crearPedido(){
+  const cliente = document.getElementById('np-cliente').value.trim();
+  const direccion = document.getElementById('np-direccion').value.trim();
+  const cantidad = parseInt(document.getElementById('np-cantidad').value);
+  const valorBolsa = parseFloat(document.getElementById('np-valor').value);
+  const formaPago = document.getElementById('np-formapago').value;
+  const fechaProgramada = document.getElementById('np-fecha').value;
+  const asignadoA = document.getElementById('np-asignado').value;
+
+  if(!cliente || !direccion || !cantidad || !valorBolsa){ toast('Completa cliente, dirección, cantidad y valor.'); return; }
+
+  const valorTotal = cantidad * valorBolsa;
+  const asignadoUsuario = cache.usuarios.find(u=>u.id===asignadoA);
+
+  await db.collection('pedidos').add({
+    cliente, direccion, cantidad, valorBolsa, valorTotal,
+    formaPago, abonos: [],
+    estado: asignadoA ? 'en_ruta' : 'programado',
+    fechaProgramada,
+    asignadoA: asignadoA || null,
+    asignadoNombre: asignadoUsuario ? asignadoUsuario.nombre : null,
+    creadoPor: currentUser.nombre,
+    creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await registrarHistorial('Pedido creado', `${cliente} — ${cantidad} bolsas — ${fmtCOP(valorTotal)} (${formaPago})`);
+  toast('Pedido cargado.');
+  ['np-cliente','np-direccion','np-cantidad','np-valor'].forEach(id=>document.getElementById(id).value='');
+}
+
+function saldoPendiente(p){
+  const abonado = (p.abonos||[]).reduce((s,a)=>s+a.monto,0);
+  return p.valorTotal - abonado;
+}
+
+function renderPedidos(){
+  const el = document.getElementById('tabla-pedidos');
+  if(!el) return;
+  if(!cache.pedidos.length){ el.innerHTML = '<p class="empty">Todavía no hay pedidos cargados.</p>'; return; }
+
+  el.innerHTML = `<table><thead><tr>
+    <th>Cliente</th><th>Bolsas</th><th>Valor</th><th>Pago</th><th>Estado</th><th>Repartidor</th><th>Saldo</th><th></th>
+  </tr></thead><tbody>
+  ${cache.pedidos.map(p=>{
+    const saldo = saldoPendiente(p);
+    const puedeEditar = currentUser.rol==='superadmin' && (p.estado==='entregado'||p.estado==='no_entregado');
+    return `<tr>
+      <td>${p.cliente}<br><span style="color:var(--ink-soft);font-size:.8rem;">${p.direccion}</span></td>
+      <td>${p.cantidad}</td>
+      <td>${fmtCOP(p.valorTotal)}</td>
+      <td><span class="badge ${p.formaPago}">${p.formaPago==='credito'?'Crédito':'Contado'}</span></td>
+      <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span></td>
+      <td>${p.asignadoNombre || '<span style="color:var(--ink-soft)">Sin asignar</span>'}</td>
+      <td>${p.formaPago==='credito' ? fmtCOP(saldo) : '—'}</td>
+      <td style="white-space:nowrap;">
+        ${p.formaPago==='credito' && saldo>0 ? `<button class="ghost small" onclick="abrirAbono('${p.id}')">Abono</button>` : ''}
+        ${puedeEditar ? `<button class="danger small" onclick="abrirEdicionSuperadmin('${p.id}')">Editar</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('')}
+  </tbody></table>`;
+}
+
+/* ============ MIS ENTREGAS (vista del domiciliario) ============ */
+function renderEntregas(){
+  const el = document.getElementById('tabla-entregas');
+  if(!el) return;
+  let lista = cache.pedidos;
+  if(currentUser.rol==='domiciliario'){
+    lista = lista.filter(p=>p.asignadoA===currentUser.id);
+  }
+  lista = lista.filter(p=>['programado','en_ruta','entregado','no_entregado'].includes(p.estado));
+  if(!lista.length){ el.innerHTML = '<p class="empty">No tienes entregas asignadas.</p>'; return; }
+
+  el.innerHTML = `<table><thead><tr>
+    <th>Cliente</th><th>Dirección</th><th>Bolsas</th><th>Pago</th><th>Estado</th><th></th>
+  </tr></thead><tbody>
+  ${lista.map(p=>{
+    const pendiente = p.estado==='programado' || p.estado==='en_ruta';
+    return `<tr>
+      <td>${p.cliente}</td>
+      <td>${p.direccion}</td>
+      <td>${p.cantidad}</td>
+      <td><span class="badge ${p.formaPago}">${p.formaPago==='credito'?'Crédito':'Contado'}</span></td>
+      <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span></td>
+      <td>${pendiente ? `<button class="primary small" onclick="abrirModalEntrega('${p.id}')">Confirmar entrega</button>` : ''}
+          ${p.formaPago==='credito' && saldoPendiente(p)>0 ? `<button class="ghost small" onclick="abrirAbono('${p.id}')">Abono</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('')}
+  </tbody></table>`;
+}
+
+function abrirModal(id){ document.getElementById(id).classList.add('active'); }
+function cerrarModal(id){ document.getElementById(id).classList.remove('active'); }
+
+function abrirModalEntrega(pedidoId){
+  document.getElementById('me-pedido-id').value = pedidoId;
+  document.getElementById('me-estado').value = 'entregado';
+  toggleMetodoPago();
+  abrirModal('modal-entrega');
+}
+function toggleMetodoPago(){
+  const esEntregado = document.getElementById('me-estado').value === 'entregado';
+  document.getElementById('me-metodo-wrap').style.display = esEntregado ? 'block' : 'none';
+}
+
+async function confirmarEntrega(){
+  const id = document.getElementById('me-pedido-id').value;
+  const estado = document.getElementById('me-estado').value;
+  const metodo = document.getElementById('me-metodo').value;
+  const pedido = cache.pedidos.find(p=>p.id===id);
+
+  const update = { estado, entregadoEn: firebase.firestore.FieldValue.serverTimestamp() };
+  if(estado==='entregado' && pedido.formaPago==='contado'){
+    update.abonos = [{ monto: pedido.valorTotal, metodo, fecha: nowLabel() }];
+    update.metodoPago = metodo;
+  }
+  await db.collection('pedidos').doc(id).update(update);
+  await registrarHistorial('Entrega confirmada', `${pedido.cliente} — ${ESTADO_LABEL[estado]}${estado==='entregado'&&pedido.formaPago==='contado' ? ' — pago '+metodo : ''}`);
+  toast('Entrega registrada.');
+  cerrarModal('modal-entrega');
+}
+
+/* ============ ABONOS (crédito) ============ */
+function abrirAbono(pedidoId){
+  const p = cache.pedidos.find(x=>x.id===pedidoId);
+  document.getElementById('ab-pedido-id').value = pedidoId;
+  const saldo = saldoPendiente(p);
+  const numAbonos = (p.abonos||[]).length;
+  document.getElementById('ab-saldo-info').textContent =
+    `Saldo pendiente: ${fmtCOP(saldo)} · Abonos registrados: ${numAbonos}/3`;
+  document.getElementById('ab-monto').value = '';
+  if(numAbonos >= 3){
+    toast('Ya se registraron los 3 pagos permitidos para este pedido.');
+    return;
+  }
+  abrirModal('modal-abono');
+}
+
+async function guardarAbono(){
+  const id = document.getElementById('ab-pedido-id').value;
+  const monto = parseFloat(document.getElementById('ab-monto').value);
+  const metodo = document.getElementById('ab-metodo').value;
+  const p = cache.pedidos.find(x=>x.id===id);
+  if(!monto || monto<=0){ toast('Ingresa un monto válido.'); return; }
+
+  const nuevosAbonos = [...(p.abonos||[]), { monto, metodo, fecha: nowLabel() }];
+  await db.collection('pedidos').doc(id).update({ abonos: nuevosAbonos });
+  await registrarHistorial('Abono registrado', `${p.cliente} — ${fmtCOP(monto)} (${metodo})`);
+  toast('Abono guardado.');
+  cerrarModal('modal-abono');
+}
+
+/* ============ EDICIÓN DE SÚPER ADMIN (pedidos ya entregados) ============ */
+function abrirEdicionSuperadmin(pedidoId){
+  const p = cache.pedidos.find(x=>x.id===pedidoId);
+  document.getElementById('ed-pedido-id').value = pedidoId;
+  document.getElementById('ed-cantidad').value = p.cantidad;
+  document.getElementById('ed-estado').value = p.estado;
+  document.getElementById('ed-motivo').value = '';
+  abrirModal('modal-editar-superadmin');
+}
+
+async function guardarEdicionSuperadmin(){
+  const id = document.getElementById('ed-pedido-id').value;
+  const nuevaCantidad = parseInt(document.getElementById('ed-cantidad').value);
+  const nuevoEstado = document.getElementById('ed-estado').value;
+  const motivo = document.getElementById('ed-motivo').value.trim();
+  const p = cache.pedidos.find(x=>x.id===id);
+
+  if(!motivo){ toast('El motivo es obligatorio para este cambio.'); return; }
+
+  await db.collection('pedidos').doc(id).update({
+    cantidad: nuevaCantidad, valorTotal: nuevaCantidad * p.valorBolsa, estado: nuevoEstado
+  });
+  await registrarHistorial('Edición de súper admin',
+    `${p.cliente}: cantidad ${p.cantidad}→${nuevaCantidad}, estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}. Motivo: ${motivo}`);
+  toast('Cambio guardado y registrado en el historial.');
+  cerrarModal('modal-editar-superadmin');
+}
+
+/* ============ PRODUCCIÓN ============ */
+async function registrarProduccion(){
+  const fecha = document.getElementById('prod-fecha').value;
+  const cantidad = parseInt(document.getElementById('prod-cantidad').value);
+  if(!fecha || !cantidad){ toast('Completa fecha y cantidad.'); return; }
+
+  await db.collection('produccion').add({
+    fecha, cantidad, registradoPor: currentUser.nombre,
+    creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await registrarHistorial('Producción registrada', `${cantidad} bolsas el ${fecha}`);
+  toast('Producción registrada.');
+  document.getElementById('prod-cantidad').value = '';
+}
+
+function renderProduccion(){
+  const el = document.getElementById('tabla-produccion');
+  if(!el) return;
+  if(!cache.produccion.length){ el.innerHTML = '<p class="empty">Sin registros todavía.</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Fecha</th><th>Bolsas</th><th>Registrado por</th></tr></thead><tbody>
+    ${cache.produccion.slice(0,60).map(r=>`<tr><td>${r.fecha}</td><td>${r.cantidad}</td><td>${r.registradoPor}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+/* ============ INVENTARIO ============ */
+function renderInventario(){
+  const totalProducido = cache.produccion.reduce((s,r)=>s+r.cantidad,0);
+  const totalEntregado = cache.pedidos.filter(p=>p.estado==='entregado').reduce((s,p)=>s+p.cantidad,0);
+  const disp = document.getElementById('inv-producido');
+  if(!disp) return;
+  document.getElementById('inv-producido').textContent = totalProducido.toLocaleString('es-CO');
+  document.getElementById('inv-entregado').textContent = totalEntregado.toLocaleString('es-CO');
+  document.getElementById('inv-disponible').textContent = (totalProducido-totalEntregado).toLocaleString('es-CO');
+}
+
+/* ============ HISTORIAL ============ */
+function renderHistorial(items){
+  const el = document.getElementById('lista-historial');
+  if(!el) return;
+  if(!items.length){ el.innerHTML = '<p class="empty">Sin actividad registrada todavía.</p>'; return; }
+  el.innerHTML = items.map(h=>`<div class="hist-entry"><b>${h.accion}</b> — ${h.detalle}<br>${h.usuario} (${ROLE_LABEL[h.rol]||h.rol}) · ${h.fechaLabel}</div>`).join('');
+}
+</script>
+</body>
+</html>
