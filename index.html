@@ -981,7 +981,11 @@ function renderPedidos(){
   });
   const fechas = Object.keys(grupos).sort((a,b)=> b.localeCompare(a));
   el.innerHTML = fechas.map(f=>{
-    const pedidosDia = grupos[f].slice().sort((a,b)=> a.clienteNombre.localeCompare(b.clienteNombre));
+    const pedidosDia = grupos[f].slice().sort((a,b)=>{
+      const nombreA = String(a.clienteNombre ?? '').trim();
+      const nombreB = String(b.clienteNombre ?? '').trim();
+      return nombreA.localeCompare(nombreB, 'es', {sensitivity:'base'});
+    });
     const totalBolsas = pedidosDia.reduce((s,p)=>s+p.cantidad,0);
     const totalValor = pedidosDia.reduce((s,p)=>s+p.valorTotal,0);
     return `<div class="card">
