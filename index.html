@@ -202,6 +202,24 @@
       <!-- VER PEDIDOS -->
       <section class="view" id="view-pedido-ver">
         <h2>Pedidos registrados</h2>
+        <div class="card">
+          <div class="field" style="margin-bottom:.7em;">
+            <label for="pedidos-busqueda">Buscar pedido</label>
+            <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(190px,1fr) auto;gap:.6em;align-items:end;">
+              <input id="pedidos-busqueda" type="search" placeholder="Escribe el dato que tengas…" autocomplete="off" oninput="renderPedidos()">
+              <select id="pedidos-filtro" onchange="actualizarPlaceholderBusqueda();renderPedidos()">
+                <option value="todos">Buscar en todos los campos</option>
+                <option value="orden">Número de orden física</option>
+                <option value="documento">Documento del cliente</option>
+                <option value="valor">Valor del pedido</option>
+                <option value="cliente">Nombre del cliente</option>
+                <option value="estado_pago">Estado de pago</option>
+              </select>
+              <button class="ghost" type="button" onclick="limpiarBusquedaPedidos()">Limpiar</button>
+            </div>
+          </div>
+          <p id="pedidos-ayuda-busqueda" style="margin:0;font-size:.78rem;color:var(--ink-soft);">Puedes buscar usando cualquiera de los datos disponibles. Con un solo dato es suficiente.</p>
+        </div>
         <div id="tabla-pedidos"></div>
       </section>
 
@@ -952,6 +970,69 @@ function saldoPendiente(p){
   const abonado = (p.abonos||[]).reduce((s,a)=>s+a.monto,0);
   return p.valorTotal - abonado;
 }
+function normalizarTextoBusqueda(valor){
+  return String(valor ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+function normalizarNumeroBusqueda(valor){
+  return String(valor ?? '').replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+}
+function estadoPagoPedido(p){
+  const total = Number(p.valorTotal || 0);
+  const abonado = (p.abonos||[]).reduce((s,a)=>s+Number(a.monto||0),0);
+  const saldo = Math.max(total - abonado, 0);
+  if(saldo <= 0) return 'pagado';
+  if(abonado > 0) return 'abono_pendiente';
+  return 'pendiente';
+}
+const ESTADO_PAGO_LABEL = { pagado:'Pagado', abono_pendiente:'Abono pendiente', pendiente:'Pendiente de pago' };
+function coincideBusquedaPedido(p, filtro, consulta){
+  const qTexto = normalizarTextoBusqueda(consulta);
+  const qNumero = normalizarNumeroBusqueda(consulta);
+  if(!qTexto) return true;
+
+  const numeroOrden = normalizarNumeroBusqueda(p.numeroOrdenCompra);
+  const documento = normalizarNumeroBusqueda(p.clienteDocumento);
+  const valor = normalizarNumeroBusqueda(p.valorTotal);
+  const nombre = normalizarTextoBusqueda(p.clienteNombre);
+  const estadoPago = estadoPagoPedido(p);
+  const estadoPagoTexto = normalizarTextoBusqueda(ESTADO_PAGO_LABEL[estadoPago] || estadoPago);
+
+  if(filtro === 'orden') return numeroOrden.includes(normalizarNumeroBusqueda(consulta));
+  if(filtro === 'documento') return documento.includes(normalizarNumeroBusqueda(consulta));
+  if(filtro === 'valor'){
+    return !!qNumero && valor === qNumero;
+  }
+  if(filtro === 'cliente') return nombre.includes(qTexto);
+  if(filtro === 'estado_pago') return estadoPagoTexto.includes(qTexto) || normalizarTextoBusqueda(estadoPago).includes(qTexto);
+
+  const coincideTexto = [nombre, estadoPagoTexto, normalizarTextoBusqueda(PAGO_LABEL[p.formaPago] || '')]
+    .some(campo=>campo && campo.includes(qTexto));
+  const coincideNumero = !!qNumero && [numeroOrden, documento, valor].some(campo=>campo && campo.includes(qNumero));
+  return coincideTexto || coincideNumero;
+}
+function actualizarPlaceholderBusqueda(){
+  const input = document.getElementById('pedidos-busqueda');
+  const ayuda = document.getElementById('pedidos-ayuda-busqueda');
+  const filtro = document.getElementById('pedidos-filtro')?.value || 'todos';
+  const textos = {
+    todos:['Escribe el dato que tengas…','Puedes buscar por orden física, documento, valor, cliente o estado de pago.'],
+    orden:['Ej: 00125','Busca por el número de orden física.'],
+    documento:['Ej: 1020304050','Busca por el documento del cliente.'],
+    valor:['Ej: 150000','Escribe el valor total del pedido. Puedes usar puntos o símbolo $.'],
+    cliente:['Ej: Juan Pérez','Busca por el nombre o razón social del cliente.'],
+    estado_pago:['Ej: Pagado, pendiente o abono','Busca por el estado actual del pago.']
+  };
+  if(input) input.placeholder = textos[filtro][0];
+  if(ayuda) ayuda.textContent = textos[filtro][1];
+}
+function limpiarBusquedaPedidos(){
+  const input = document.getElementById('pedidos-busqueda');
+  const filtro = document.getElementById('pedidos-filtro');
+  if(input) input.value = '';
+  if(filtro) filtro.value = 'todos';
+  actualizarPlaceholderBusqueda();
+  renderPedidos();
+}
 
 /* ============ VER PEDIDOS: agrupados por fecha y cliente ============ */
 function filaPedidoHTML(p){
@@ -979,14 +1060,26 @@ function filaPedidoHTML(p){
 function renderPedidos(){
   const el = document.getElementById('tabla-pedidos');
   if(!el) return;
+  actualizarPlaceholderBusqueda();
   if(!cache.pedidos.length){ el.innerHTML = '<p class="empty">Todavía no hay pedidos cargados.</p>'; return; }
+
+  const consulta = document.getElementById('pedidos-busqueda')?.value || '';
+  const filtro = document.getElementById('pedidos-filtro')?.value || 'todos';
+  const pedidosFiltrados = cache.pedidos.filter(p=>coincideBusquedaPedido(p, filtro, consulta));
+
+  if(consulta.trim() && !pedidosFiltrados.length){
+    el.innerHTML = `<div class="card"><p class="empty" style="margin:0;">No se encontraron pedidos que coincidan con <b>${consulta.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]))}</b>.</p></div>`;
+    return;
+  }
+
   const grupos = {};
-  cache.pedidos.forEach(p=>{
+  pedidosFiltrados.forEach(p=>{
     const f = p.fechaProgramada || 'Sin fecha';
     grupos[f] = grupos[f] || [];
     grupos[f].push(p);
   });
   const fechas = Object.keys(grupos).sort((a,b)=> b.localeCompare(a));
+  const etiquetaResultados = consulta.trim() ? ` · ${pedidosFiltrados.length} resultado${pedidosFiltrados.length===1?'':'s'}` : '';
   el.innerHTML = fechas.map(f=>{
     const pedidosDia = grupos[f].slice().sort((a,b)=>{
       const nombreA = String(a.clienteNombre ?? '').trim();
@@ -997,7 +1090,7 @@ function renderPedidos(){
     const totalValor = pedidosDia.reduce((s,p)=>s+p.valorTotal,0);
     return `<div class="card">
       <div class="toolbar">
-        <h3 style="margin:0;">${f} <span style="font-weight:400;color:var(--ink-soft);font-size:.78rem;">(${pedidosDia.length} pedidos · ${totalBolsas} bolsas · ${fmtCOP(totalValor)})</span></h3>
+        <h3 style="margin:0;">${f} <span style="font-weight:400;color:var(--ink-soft);font-size:.78rem;">(${pedidosDia.length} pedidos · ${totalBolsas} bolsas · ${fmtCOP(totalValor)}${etiquetaResultados})</span></h3>
         <button class="ghost small" onclick="descargarPedidosDiaPDF('${f}')">Descargar PDF del día</button>
       </div>
       <table><thead><tr>
