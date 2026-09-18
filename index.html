@@ -6,38 +6,39 @@
 <title>MasiColPos — Control de pedidos y producción</title>
 <link rel="icon" href="https://cvdc.com.co/wp-content/uploads/2026/09/Recurso-3-scaled.png">
 
-<!-- Firebase (compat SDK) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-
-<!-- Generación de PDF y Excel -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
   :root{
-    --navy: #1E3245; --navy-deep: #16242F; --paper: #F6F4EF; --card: #FFFFFF;
-    --line: #DCD6C9; --ink: #23282B; --ink-soft: #5B6368;
-    --clay: #B5522E; --lime: #4C7A5A; --amber: #A9761E; --radius: 10px;
-    font-size: 16px;
+    --navy:#1E3245; --navy-deep:#16242F; --paper:#F6F4EF; --card:#FFFFFF;
+    --line:#DCD6C9; --ink:#23282B; --ink-soft:#5B6368;
+    --clay:#B5522E; --lime:#4C7A5A; --amber:#A9761E; --radius:10px;
+    font-size:16px;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
-  body{ background: var(--paper); color: var(--ink); font-family: "Segoe UI","Helvetica Neue",Arial,sans-serif; min-height:100vh; }
-  h1,h2,h3{ font-family: Georgia,"Times New Roman",serif; font-weight:600; margin:0 0 .3em 0; color:var(--navy-deep); }
+  body{ background:var(--paper); color:var(--ink); font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; min-height:100vh; }
+  h1,h2,h3{ font-family:Georgia,"Times New Roman",serif; font-weight:600; margin:0 0 .3em 0; color:var(--navy-deep); }
   button{ font-family:inherit; cursor:pointer; border:none; border-radius:var(--radius); padding:.65em 1.2em; font-size:.95rem; transition: transform .08s ease, box-shadow .15s ease; }
   button:active{ transform: scale(.98); }
-  button.primary{ background: var(--navy); color:#fff; }
-  button.primary:hover{ background: var(--navy-deep); }
-  button.ghost{ background: transparent; color: var(--navy); border:1px solid var(--line); }
-  button.ghost:hover{ background: #EFEAE0; }
-  button.danger{ background: var(--clay); color:#fff; }
-  button.small{ padding: .35em .8em; font-size: .8rem; }
+  button.primary{ background:var(--navy); color:#fff; }
+  button.primary:hover{ background:var(--navy-deep); }
+  button.ghost{ background:transparent; color:var(--navy); border:1px solid var(--line); }
+  button.ghost:hover{ background:#EFEAE0; }
+  button.danger{ background:var(--clay); color:#fff; }
+  button.small{ padding:.35em .8em; font-size:.8rem; }
   input, select, textarea{ font-family:inherit; font-size:.95rem; padding:.55em .7em; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--ink); width:100%; }
+  input[readonly]{ background:#EFEAE0; color:var(--ink-soft); }
   label{ font-size:.82rem; color:var(--ink-soft); display:block; margin-bottom:.25em; }
+  label.checkbox-label{ display:flex; align-items:center; gap:.5em; font-size:.85rem; color:var(--ink); }
+  label.checkbox-label input{ width:auto; }
   .field{ margin-bottom:.9em; }
-  a{ color: var(--navy); }
+  a{ color:var(--navy); }
 
   #login-screen{ min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--navy-deep); padding:20px; }
   .login-card{ background:var(--card); border-radius:14px; padding:2.4em 2.2em; width:100%; max-width:360px; box-shadow:0 20px 60px rgba(0,0,0,.35); text-align:center; }
@@ -61,6 +62,9 @@
   nav.sidebar button.sub{ padding-left:1.4em; font-size:.85rem; }
   nav.sidebar button.active{ background:var(--navy); color:#fff; }
   nav.sidebar button:hover:not(.active){ background:#e2ddd0; }
+  nav.sidebar button.nav-cta{ background:var(--lime); color:#fff; font-weight:700; font-size:.98rem; padding:.8em .8em; margin:.3em 0 .6em; }
+  nav.sidebar button.nav-cta:hover{ background:#3f6a4c; }
+  nav.sidebar button.nav-cta.active{ background:var(--navy-deep); }
 
   main.content{ flex:1; padding:1.6em 2em; overflow-x:auto; }
   .view{ display:none; }
@@ -83,6 +87,8 @@
   .badge.no_entregado{ background:#F3DEDA; color:var(--clay); }
   .badge.credito{ background:#F1E6D2; color:var(--amber); }
   .badge.efectivo, .badge.transferencia{ background:#E3EAE6; color:#3A6650; }
+  .badge.abierta{ background:#E1EEE4; color:var(--lime); }
+  .badge.cerrada{ background:#F3DEDA; color:var(--clay); }
 
   .empty{ color:var(--ink-soft); font-style:italic; padding:1em 0; }
   .stat{ display:flex; gap:1em; flex-wrap:wrap; margin-bottom:1em; }
@@ -103,9 +109,16 @@
   .toast.show{ opacity:1; transform:translateY(0); }
 
   .setup-warning{ background:#FBF1D8; border:1px solid #E4C878; color:#6B5A20; padding:1em 1.2em; border-radius:var(--radius); margin:1em; font-size:.88rem; }
-  .hist-entry{ font-size:.82rem; padding:.4em 0; border-bottom:1px dashed var(--line); color:var(--ink-soft); }
+  .hist-entry{ font-size:.82rem; padding:.5em 0; border-bottom:1px dashed var(--line); color:var(--ink-soft); }
   .hist-entry b{ color:var(--ink); }
   .toolbar{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.6em; margin-bottom:.8em; }
+
+  .tabs{ display:flex; gap:.3em; margin-bottom:1em; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .tabs button{ background:none; border-radius:8px 8px 0 0; padding:.55em 1.1em; color:var(--ink-soft); font-size:.86rem; }
+  .tabs button.active{ background:var(--card); color:var(--navy-deep); font-weight:700; border:1px solid var(--line); border-bottom:1px solid var(--card); margin-bottom:-1px; }
+  .subtab{ display:none; }
+  .subtab.active{ display:block; }
+  #firma-canvas{ border:1px solid var(--line); border-radius:8px; width:100%; max-width:360px; touch-action:none; background:#fff; display:block; }
 </style>
 </head>
 <body>
@@ -149,13 +162,18 @@
         <h2>Nuevo pedido</h2>
         <div class="card">
           <div class="field">
-            <label>Cliente</label>
-            <select id="np-cliente-select" onchange="onSelectCliente()">
-              <option value="">— Selecciona un cliente —</option>
-            </select>
+            <label>Número de documento del cliente</label>
+            <div style="display:flex; gap:.5em;">
+              <input id="np-cliente-doc" placeholder="Ej: 1020304050" onkeydown="if(event.key==='Enter'){event.preventDefault();buscarClientePorDocumento();}">
+              <button class="ghost" style="white-space:nowrap;" onclick="buscarClientePorDocumento()">Buscar</button>
+            </div>
           </div>
-          <button class="ghost small" style="margin-bottom:1.2em;" onclick="abrirModalCliente({onSaved:onClienteCreadoDesdeModal})">+ Crear cliente nuevo</button>
+          <input type="hidden" id="np-cliente-id">
           <div id="np-cliente-info" class="cliente-info-card" style="display:none;"></div>
+          <div id="np-cliente-no-encontrado" style="display:none; margin-bottom:1em;">
+            <p style="color:var(--clay); font-size:.85rem;">No hay ningún cliente con ese documento.</p>
+            <button class="ghost small" onclick="abrirModalCliente({onSaved:onClienteCreadoDesdeModal, prefillDoc:true})">+ Crear cliente con este documento</button>
+          </div>
 
           <div class="grid2">
             <div class="field"><label>Dirección de entrega</label><input id="np-direccion"></div>
@@ -169,7 +187,7 @@
               </select>
             </div>
             <div class="field" id="np-cuotas-wrap" style="display:none;"><label>Número de cuotas</label>
-              <select id="np-cuotas"><option value="2">2 cuotas</option><option value="3">3 cuotas</option></select>
+              <select id="np-cuotas"></select>
             </div>
             <div class="field"><label>Fecha programada</label><input id="np-fecha" type="date"></div>
             <div class="field"><label>Asignar a repartidor</label>
@@ -183,12 +201,15 @@
       <!-- VER PEDIDOS -->
       <section class="view" id="view-pedido-ver">
         <h2>Pedidos registrados</h2>
-        <div class="card"><div id="tabla-pedidos"></div></div>
+        <div id="tabla-pedidos"></div>
       </section>
 
       <!-- MIS ENTREGAS -->
       <section class="view" id="view-entregas">
-        <h2>Mis entregas</h2>
+        <div class="toolbar">
+          <h2 style="margin:0;">Mis entregas</h2>
+          <button class="ghost small" onclick="descargarEntregasExcel()">Descargar tabla (Excel)</button>
+        </div>
         <div id="tabla-entregas"></div>
       </section>
 
@@ -212,8 +233,10 @@
         <div class="stat">
           <div class="box"><div class="num" id="inv-producido">0</div><div class="lbl">Fabricadas (histórico)</div></div>
           <div class="box"><div class="num" id="inv-entregado">0</div><div class="lbl">Entregadas (histórico)</div></div>
-          <div class="box"><div class="num" id="inv-disponible">0</div><div class="lbl">Disponibles ahora</div></div>
+          <div class="box"><div class="num" id="inv-reservado">0</div><div class="lbl">Reservado en pedidos pendientes</div></div>
+          <div class="box"><div class="num" id="inv-disponible">0</div><div class="lbl">Disponible real ahora</div></div>
         </div>
+        <p id="inv-alerta-critica" style="display:none;color:var(--clay);font-weight:700;">⚠️ Inventario en nivel crítico — quedan pocas bolsas disponibles.</p>
         <div class="card">
           <div class="toolbar">
             <h3 style="margin:0;">Detalle por fecha</h3>
@@ -227,47 +250,83 @@
         </div>
       </section>
 
+      <!-- TESORERÍA (solo súper administrador) -->
+      <section class="view" id="view-tesoreria">
+        <h2>Tesorería</h2>
+        <div class="tabs" id="teso-tabs">
+          <button class="active" onclick="mostrarTesoTab('resumen', this)">Resumen</button>
+          <button onclick="mostrarTesoTab('movimientos', this)">Movimientos</button>
+          <button onclick="mostrarTesoTab('precio', this)">Precio y stock</button>
+          <button onclick="mostrarTesoTab('caja', this)">Caja del día</button>
+          <button onclick="mostrarTesoTab('cartera', this)">Cartera</button>
+        </div>
+
+        <div class="subtab active" id="teso-resumen">
+          <div class="stat">
+            <div class="box"><div class="num" id="teso-valor-inventario">$0</div><div class="lbl">Valor estimado del inventario disponible</div></div>
+            <div class="box"><div class="num" id="teso-efectivo-hoy">$0</div><div class="lbl">Efectivo recibido hoy</div></div>
+            <div class="box"><div class="num" id="teso-transferencia-hoy">$0</div><div class="lbl">Transferencias recibidas hoy</div></div>
+          </div>
+          <div class="stat">
+            <div class="box"><div class="num" id="teso-cartera-total">$0</div><div class="lbl">Cartera pendiente por cobrar</div></div>
+            <div class="box"><div class="num" id="teso-ventas-mes">$0</div><div class="lbl">Valor total de pedidos este mes</div></div>
+          </div>
+          <div class="card">
+            <h3>Pedidos de hoy sin cerrar</h3>
+            <p style="font-size:.85rem;color:var(--ink-soft);">Estos pedidos siguen "Programado" o "En ruta". Confírmalos desde "Ver pedidos" o "Mis entregas" — aquí solo dejamos visible qué falta, sin marcar entregas automáticamente.</p>
+            <div id="teso-pedidos-pendientes-hoy"></div>
+          </div>
+        </div>
+
+        <div class="subtab" id="teso-movimientos">
+          <div class="card"><div id="tabla-movimientos"></div></div>
+        </div>
+
+        <div class="subtab" id="teso-precio">
+          <div class="card">
+            <h3>Valor estándar por bolsa y stock mínimo</h3>
+            <p style="font-size:.85rem;color:var(--ink-soft);">El valor por bolsa se usa por defecto en cada pedido nuevo — solo el súper administrador puede registrar un pedido por debajo de este valor (descuento). El stock mínimo activa la alerta visual en Inventario.</p>
+            <div class="grid2">
+              <div class="field"><label>Valor por bolsa (COP)</label><input id="precio-estandar" type="number" min="0"></div>
+              <div class="field"><label>Alerta de stock crítico (bolsas)</label><input id="stock-minimo" type="number" min="0"></div>
+            </div>
+            <button class="primary" onclick="guardarPrecioEstandar()">Guardar configuración</button>
+            <p id="precio-actualizado-info" style="font-size:.78rem;color:var(--ink-soft);margin-top:.8em;"></p>
+          </div>
+        </div>
+
+        <div class="subtab" id="teso-caja">
+          <div class="card" id="teso-caja-card"></div>
+          <div class="card"><h3>Cierres anteriores</h3><div id="tabla-cajas"></div></div>
+        </div>
+
+        <div class="subtab" id="teso-cartera">
+          <div class="stat"><div class="box"><div class="num" id="teso-cartera-total-2">$0</div><div class="lbl">Total pendiente por cobrar</div></div></div>
+          <div class="card"><div id="tabla-cartera"></div></div>
+        </div>
+      </section>
+
       <!-- CLIENTES -->
       <section class="view" id="view-clientes">
-        <h2>Clientes</h2>
-        <div class="card">
-          <h3 id="cliente-form-titulo">Registrar cliente</h3>
-          <input type="hidden" id="cl-edit-id">
-          <div class="grid3">
-            <div class="field"><label>Tipo de documento</label>
-              <select id="cl-tipodoc"><option value="NIT">NIT</option><option value="CC">Cédula de ciudadanía</option></select>
-            </div>
-            <div class="field"><label>Número de documento</label><input id="cl-numdoc"></div>
-            <div class="field"><label>Tipo de cliente</label>
-              <select id="cl-tipocliente"><option value="natural">Persona natural</option><option value="empresa">Empresa</option></select>
-            </div>
-          </div>
-          <div class="field"><label>Nombre o razón social</label><input id="cl-nombre"></div>
-          <div class="grid3">
-            <div class="field"><label>Departamento</label><input id="cl-departamento"></div>
-            <div class="field"><label>Ciudad</label><input id="cl-ciudad"></div>
-            <div class="field"><label>Barrio</label><input id="cl-barrio"></div>
-          </div>
-          <div class="field"><label>Dirección</label><input id="cl-direccion"></div>
-          <div class="grid2">
-            <div class="field"><label>Teléfono</label><input id="cl-telefono"></div>
-            <div class="field"><label>Correo electrónico</label><input id="cl-correo" type="email"></div>
-          </div>
-          <button class="primary" onclick="guardarClienteForm()">Guardar cliente</button>
-          <button class="ghost" onclick="limpiarFormCliente()">Cancelar edición</button>
+        <div class="toolbar">
+          <h2 style="margin:0;">Clientes</h2>
+          <button class="primary" onclick="abrirModalCliente({onSaved:null})">+ Nuevo cliente</button>
         </div>
-
-        <div class="card">
-          <div class="toolbar">
-            <h3 style="margin:0;">Listado de clientes</h3>
-            <button class="ghost small" onclick="descargarClientesExcel()">Descargar listado (Excel)</button>
-          </div>
-          <div id="tabla-clientes"></div>
+        <div class="tabs" id="cliente-tabs">
+          <button class="active" onclick="mostrarClienteTab('listado', this)">Listado</button>
+          <button onclick="mostrarClienteTab('analisis', this)">Análisis de pedidos</button>
         </div>
-
-        <div class="card">
-          <h3>Análisis de pedidos por cliente</h3>
-          <div id="tabla-analisis-clientes"></div>
+        <div class="subtab active" id="cliente-listado">
+          <div class="card">
+            <div class="toolbar">
+              <h3 style="margin:0;">Listado de clientes</h3>
+              <button class="ghost small" onclick="descargarClientesExcel()">Descargar listado (Excel)</button>
+            </div>
+            <div id="tabla-clientes"></div>
+          </div>
+        </div>
+        <div class="subtab" id="cliente-analisis">
+          <div class="card"><h3>Análisis de pedidos por cliente</h3><div id="tabla-analisis-clientes"></div></div>
         </div>
       </section>
 
@@ -298,10 +357,7 @@
       <section class="view" id="view-historial">
         <h2>Historial de cambios</h2>
         <div class="card">
-          <div class="toolbar">
-            <span></span>
-            <button class="ghost small" onclick="descargarHistorialExcel()">Descargar historial (Excel)</button>
-          </div>
+          <div class="toolbar"><span></span><button class="ghost small" onclick="descargarHistorialExcel()">Descargar historial (Excel)</button></div>
           <div id="lista-historial"></div>
         </div>
       </section>
@@ -310,7 +366,7 @@
   </div>
 </div>
 
-<!-- ============ MODAL: cliente (crear/editar) ============ -->
+<!-- ============ MODAL: cliente ============ -->
 <div class="modal-overlay" id="modal-cliente">
   <div class="modal">
     <h3 id="modal-cliente-titulo">Crear cliente</h3>
@@ -342,14 +398,43 @@
   </div>
 </div>
 
-<!-- ============ MODAL: confirmar entrega ============ -->
+<!-- ============ MODAL: confirmar entrega / novedad ============ -->
 <div class="modal-overlay" id="modal-entrega">
   <div class="modal">
     <h3>Confirmar entrega</h3>
     <input type="hidden" id="me-pedido-id">
     <div class="field"><label>Resultado</label>
-      <select id="me-estado"><option value="entregado">Entregado</option><option value="no_entregado">No entregado</option></select>
+      <select id="me-estado" onchange="toggleEntregaCampos()">
+        <option value="entregado">Entregado</option>
+        <option value="no_entregado">No entregado (novedad)</option>
+      </select>
     </div>
+
+    <div id="me-entregado-campos">
+      <div class="field"><label>Nombre de quien recibe</label><input id="me-receptor-nombre"></div>
+      <div class="field"><label>Documento de quien recibe</label><input id="me-receptor-doc"></div>
+      <div class="field">
+        <label>Firma de quien recibe</label>
+        <canvas id="firma-canvas" width="360" height="140"></canvas>
+        <button type="button" class="ghost small" style="margin-top:.5em;" onclick="limpiarFirma()">Limpiar firma</button>
+      </div>
+    </div>
+
+    <div id="me-novedad-campos" style="display:none;">
+      <div class="field"><label>Motivo de la novedad</label>
+        <select id="me-novedad-motivo">
+          <option value="Cliente ausente">Cliente ausente</option>
+          <option value="Dirección incorrecta o no ubicada">Dirección incorrecta o no ubicada</option>
+          <option value="Cliente rechazó el pedido">Cliente rechazó el pedido</option>
+          <option value="Producto dañado en el transporte">Producto dañado en el transporte</option>
+          <option value="Cliente aplazó la entrega">Cliente aplazó la entrega</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+      <div class="field"><label>Detalle adicional (opcional)</label><textarea id="me-novedad-detalle" rows="2"></textarea></div>
+      <p style="font-size:.8rem;color:var(--ink-soft);">Las bolsas de este pedido vuelven a quedar disponibles en inventario.</p>
+    </div>
+
     <div class="modal-actions">
       <button class="ghost" onclick="cerrarModal('modal-entrega')">Cancelar</button>
       <button class="primary" onclick="confirmarEntrega()">Confirmar</button>
@@ -374,19 +459,23 @@
   </div>
 </div>
 
-<!-- ============ MODAL: editar pedido entregado (solo súper admin) ============ -->
+<!-- ============ MODAL: editar pedido (solo súper admin) ============ -->
 <div class="modal-overlay" id="modal-editar-superadmin">
   <div class="modal">
-    <h3>Editar pedido entregado</h3>
+    <h3>Editar / corregir pedido</h3>
     <p style="font-size:.82rem;color:var(--clay);">Esta acción queda registrada en el historial con tu usuario y el motivo que escribas.</p>
     <input type="hidden" id="ed-pedido-id">
-    <div class="field"><label>Cantidad de bolsas</label><input id="ed-cantidad" type="number" min="1"></div>
+    <div class="grid2">
+      <div class="field"><label>Cantidad de bolsas</label><input id="ed-cantidad" type="number" min="1"></div>
+      <div class="field"><label>Valor por bolsa (COP)</label><input id="ed-valorbolsa" type="number" min="0"></div>
+    </div>
     <div class="field"><label>Estado</label>
       <select id="ed-estado">
         <option value="entregado">Entregado</option><option value="no_entregado">No entregado</option>
         <option value="programado">Programado</option><option value="en_ruta">En ruta</option>
       </select>
     </div>
+    <label class="checkbox-label field"><input type="checkbox" id="ed-reset-abonos"> Reiniciar pagos/abonos registrados en este pedido</label>
     <div class="field"><label>Motivo del cambio (obligatorio)</label><textarea id="ed-motivo" rows="2"></textarea></div>
     <div class="modal-actions">
       <button class="ghost" onclick="cerrarModal('modal-editar-superadmin')">Cancelar</button>
@@ -399,7 +488,7 @@
 
 <script>
 /* ======================================================================
-   MasiColPos — lógica de la aplicación (v2)
+   MasiColPos — lógica de la aplicación (v4)
    ====================================================================== */
 
 const firebaseConfig = {
@@ -418,12 +507,9 @@ try{
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     firebaseReady = true;
-    // Inicio de sesión anónimo: requisito para que las reglas de seguridad
-    // de producción puedan exigir "usuario autenticado" sin usar el login propio.
     firebase.auth().signInAnonymously().catch(e=>console.error('Auth anónima falló', e));
   }
 }catch(e){ console.error("Error iniciando Firebase:", e); }
-
 if(!firebaseReady){ document.getElementById('setup-warning').style.display = 'block'; }
 
 /* ---------- utilidades ---------- */
@@ -448,10 +534,11 @@ const ESTADO_LABEL = { programado:'Programado', en_ruta:'En ruta', entregado:'En
 const PAGO_LABEL = { efectivo:'Efectivo', transferencia:'Transferencia', credito:'Crédito' };
 
 let currentUser = null;
-let cache = { usuarios: [], pedidos: [], produccion: [], clientes: [], historial: [] };
+let cache = { usuarios:[], pedidos:[], produccion:[], clientes:[], historial:[], cajas:[], precioEstandar:0, stockMinimo:0 };
 let clienteModalOnSaved = null;
+let firmaCtx = null, firmaDibujando = false, firmaTieneTrazo = false;
 
-/* ============ AUTENTICACIÓN PROPIA (sobre Firestore) ============ */
+/* ============ AUTENTICACIÓN PROPIA ============ */
 async function handleLogin(){
   const usuario = document.getElementById('login-user').value.trim();
   const pass = document.getElementById('login-pass').value;
@@ -482,6 +569,8 @@ function handleLogout(){
   document.getElementById('login-pass').value = '';
 }
 window.addEventListener('load', ()=>{
+  const cuotasSel = document.getElementById('np-cuotas');
+  for(let i=2;i<=10;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i+' cuotas'; cuotasSel.appendChild(o); }
   const saved = localStorage.getItem('masicolpos_session');
   if(saved && firebaseReady){ currentUser = JSON.parse(saved); entrarApp(); }
   document.getElementById('np-fecha').value = hoyISO();
@@ -489,18 +578,18 @@ window.addEventListener('load', ()=>{
   document.getElementById('inv-mes').value = mesISO();
 });
 
-/* ============ NAVEGACIÓN ============ */
+/* ============ NAVEGACIÓN (visibilidad por rol) ============ */
 const NAV_BY_ROLE = {
   superadmin: [
-    {group:'Pedidos', items:[['pedido-nuevo','Nuevo pedido'],['pedido-ver','Ver pedidos']]},
+    {group:'Pedidos', items:[['pedido-nuevo','+ Nuevo pedido', 'nav-cta'],['pedido-ver','Ver pedidos']]},
     ['entregas','Mis entregas'], ['produccion','Producción'], ['inventario','Inventario'],
-    ['clientes','Clientes'], ['usuarios','Usuarios'], ['historial','Historial']
+    ['tesoreria','Tesorería'], ['clientes','Clientes'], ['usuarios','Usuarios'], ['historial','Historial']
   ],
   admin: [
-    {group:'Pedidos', items:[['pedido-nuevo','Nuevo pedido'],['pedido-ver','Ver pedidos']]},
+    {group:'Pedidos', items:[['pedido-nuevo','+ Nuevo pedido', 'nav-cta'],['pedido-ver','Ver pedidos']]},
     ['produccion','Producción'], ['inventario','Inventario'], ['clientes','Clientes']
   ],
-  operario: [ ['produccion','Producción'], ['inventario','Inventario'] ],
+  operario: [ ['produccion','Producción'] ],
   domiciliario: [ ['entregas','Mis entregas'] ]
 };
 
@@ -512,7 +601,6 @@ function entrarApp(){
   buildSidebar();
   cargarTodo();
 }
-
 function buildSidebar(){
   const nav = NAV_BY_ROLE[currentUser.rol] || [];
   const sidebar = document.getElementById('sidebar');
@@ -520,20 +608,22 @@ function buildSidebar(){
   let firstKey = null;
   nav.forEach(entry=>{
     if(Array.isArray(entry)){
-      const [key,label] = entry;
+      const [key,label,extraClass] = entry;
       if(!firstKey) firstKey = key;
       const btn = document.createElement('button');
       btn.textContent = label; btn.dataset.key = key;
+      if(extraClass) btn.classList.add(extraClass);
       btn.onclick = ()=>mostrarVista(key, btn);
       sidebar.appendChild(btn);
     } else {
       const groupLabel = document.createElement('div');
       groupLabel.className = 'group-label'; groupLabel.textContent = entry.group;
       sidebar.appendChild(groupLabel);
-      entry.items.forEach(([key,label])=>{
+      entry.items.forEach(([key,label,extraClass])=>{
         if(!firstKey) firstKey = key;
         const btn = document.createElement('button');
         btn.className = 'sub'; btn.textContent = label; btn.dataset.key = key;
+        if(extraClass) btn.classList.add(extraClass);
         btn.onclick = ()=>mostrarVista(key, btn);
         sidebar.appendChild(btn);
       });
@@ -541,7 +631,6 @@ function buildSidebar(){
   });
   if(firstKey) mostrarVista(firstKey);
 }
-
 function mostrarVista(key, btnEl){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   const view = document.getElementById('view-'+key);
@@ -549,9 +638,11 @@ function mostrarVista(key, btnEl){
   document.querySelectorAll('nav.sidebar button').forEach(b=>b.classList.remove('active'));
   const target = btnEl || document.querySelector(`nav.sidebar button[data-key="${key}"]`);
   if(target) target.classList.add('active');
+  if(key === 'pedido-nuevo') aplicarPrecioAlFormulario();
+  if(key === 'tesoreria') renderTesoreria();
 }
 
-/* ============ CARGA DE DATOS (tiempo real) ============ */
+/* ============ CARGA DE DATOS ============ */
 function cargarTodo(){
   db.collection('usuarios').onSnapshot(snap=>{
     cache.usuarios = snap.docs.map(d=>({id:d.id, ...d.data()}));
@@ -559,27 +650,46 @@ function cargarTodo(){
   });
   db.collection('clientes').orderBy('nombreRazonSocial').onSnapshot(snap=>{
     cache.clientes = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    renderSelectClientes(); renderClientes(); renderAnalisisClientes();
+    renderClientes(); renderAnalisisClientes();
   });
   db.collection('pedidos').orderBy('creadoEn','desc').onSnapshot(snap=>{
     cache.pedidos = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    renderPedidos(); renderEntregas(); renderInventario(); renderAnalisisClientes();
+    renderPedidos(); renderEntregas(); renderInventario(); renderAnalisisClientes(); renderTesoreria(); renderHistorial(cache.historial);
   });
   db.collection('produccion').orderBy('fecha','desc').onSnapshot(snap=>{
     cache.produccion = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    renderProduccion(); renderInventario();
+    renderProduccion(); renderInventario(); renderTesoreria(); renderHistorial(cache.historial);
   });
   db.collection('historial').orderBy('fecha','desc').limit(300).onSnapshot(snap=>{
     cache.historial = snap.docs.map(d=>d.data());
     renderHistorial(cache.historial);
   });
+  db.collection('cajas').orderBy('fecha','desc').limit(60).onSnapshot(snap=>{
+    cache.cajas = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderTesoreria();
+  });
+  db.collection('config').doc('precios').onSnapshot(doc=>{
+    const data = doc.exists ? doc.data() : {};
+    cache.precioEstandar = data.valorBolsaEstandar || 0;
+    cache.stockMinimo = data.stockMinimo || 0;
+    const info = document.getElementById('precio-actualizado-info');
+    if(doc.exists && info){ info.textContent = `Última actualización: ${data.actualizadoPor||'—'} · ${data.actualizadoEnLabel||''}`; }
+    const inputPrecio = document.getElementById('precio-estandar');
+    if(inputPrecio && document.activeElement !== inputPrecio) inputPrecio.value = cache.precioEstandar || '';
+    const inputStock = document.getElementById('stock-minimo');
+    if(inputStock && document.activeElement !== inputStock) inputStock.value = cache.stockMinimo || '';
+    aplicarPrecioAlFormulario();
+    renderTesoreria(); renderInventario();
+  });
 }
-async function registrarHistorial(accion, detalle){
+async function registrarHistorial(accion, detalle, ref={}){
   try{
-    await db.collection('historial').add({
+    const payload = {
       accion, detalle, usuario: currentUser.nombre, rol: currentUser.rol,
       fecha: firebase.firestore.FieldValue.serverTimestamp(), fechaLabel: nowLabel()
-    });
+    };
+    if(ref.refType){ payload.refType = ref.refType; payload.refId = ref.refId; }
+    await db.collection('historial').add(payload);
   }catch(e){ console.error('No se pudo registrar historial', e); }
 }
 
@@ -587,31 +697,32 @@ async function registrarHistorial(accion, detalle){
 function direccionCompleta(c){
   return `${c.direccion||''}${c.barrio?', barrio '+c.barrio:''}, ${c.ciudad||''}, ${c.departamento||''}`;
 }
-function renderSelectClientes(){
-  const sel = document.getElementById('np-cliente-select');
-  if(!sel) return;
-  const actual = sel.value;
-  sel.innerHTML = '<option value="">— Selecciona un cliente —</option>' +
-    cache.clientes.map(c=>`<option value="${c.id}">${c.nombreRazonSocial} — ${c.numeroDocumento}</option>`).join('');
-  if(actual) sel.value = actual;
-}
-function onSelectCliente(){
-  const id = document.getElementById('np-cliente-select').value;
-  const info = document.getElementById('np-cliente-info');
-  const c = cache.clientes.find(x=>x.id===id);
-  if(!c){ info.style.display='none'; return; }
-  info.style.display='block';
-  info.innerHTML = `<b>${c.nombreRazonSocial}</b> (${c.tipoDocumento} ${c.numeroDocumento})<br>
+function buscarClientePorDocumento(){
+  const doc = document.getElementById('np-cliente-doc').value.trim();
+  const infoBox = document.getElementById('np-cliente-info');
+  const noEncontrado = document.getElementById('np-cliente-no-encontrado');
+  if(!doc){ toast('Escribe un número de documento.'); return; }
+  const c = cache.clientes.find(x=> (x.numeroDocumento||'').trim() === doc);
+  if(!c){
+    infoBox.style.display = 'none';
+    document.getElementById('np-cliente-id').value = '';
+    noEncontrado.style.display = 'block';
+    return;
+  }
+  noEncontrado.style.display = 'none';
+  document.getElementById('np-cliente-id').value = c.id;
+  infoBox.style.display = 'block';
+  infoBox.innerHTML = `<b>${c.nombreRazonSocial}</b> (${c.tipoDocumento} ${c.numeroDocumento})<br>
     Tel: ${c.telefono||'—'} · Correo: ${c.correo||'—'}<br>${direccionCompleta(c)}`;
   document.getElementById('np-direccion').value = direccionCompleta(c);
 }
 function onClienteCreadoDesdeModal(nuevoId){
-  renderSelectClientes();
-  const sel = document.getElementById('np-cliente-select');
-  sel.value = nuevoId;
-  onSelectCliente();
+  const c = cache.clientes.find(x=>x.id===nuevoId);
+  if(!c) return;
+  document.getElementById('np-cliente-doc').value = c.numeroDocumento;
+  buscarClientePorDocumento();
 }
-function abrirModalCliente({onSaved=null, editId=null}={}){
+function abrirModalCliente({onSaved=null, editId=null, prefillDoc=false}={}){
   clienteModalOnSaved = onSaved;
   document.getElementById('mc-edit-id').value = editId || '';
   document.getElementById('modal-cliente-titulo').textContent = editId ? 'Editar cliente' : 'Crear cliente';
@@ -629,6 +740,7 @@ function abrirModalCliente({onSaved=null, editId=null}={}){
     document.getElementById('mc-correo').value = c.correo||'';
   } else {
     ['mc-numdoc','mc-nombre','mc-departamento','mc-ciudad','mc-barrio','mc-direccion','mc-telefono','mc-correo'].forEach(id=>document.getElementById(id).value='');
+    if(prefillDoc){ document.getElementById('mc-numdoc').value = document.getElementById('np-cliente-doc').value.trim(); }
   }
   abrirModal('modal-cliente');
 }
@@ -663,41 +775,6 @@ async function guardarClienteModal(){
   cerrarModal('modal-cliente');
   if(clienteModalOnSaved) clienteModalOnSaved(id);
 }
-function limpiarFormCliente(){
-  document.getElementById('cl-edit-id').value='';
-  document.getElementById('cliente-form-titulo').textContent = 'Registrar cliente';
-  ['cl-numdoc','cl-nombre','cl-departamento','cl-ciudad','cl-barrio','cl-direccion','cl-telefono','cl-correo'].forEach(id=>document.getElementById(id).value='');
-}
-function editarClienteEnVista(id){
-  const c = cache.clientes.find(x=>x.id===id);
-  document.getElementById('cl-edit-id').value = id;
-  document.getElementById('cliente-form-titulo').textContent = 'Editando: ' + c.nombreRazonSocial;
-  document.getElementById('cl-tipodoc').value = c.tipoDocumento;
-  document.getElementById('cl-numdoc').value = c.numeroDocumento;
-  document.getElementById('cl-nombre').value = c.nombreRazonSocial;
-  document.getElementById('cl-tipocliente').value = c.tipoCliente;
-  document.getElementById('cl-departamento').value = c.departamento||'';
-  document.getElementById('cl-ciudad').value = c.ciudad||'';
-  document.getElementById('cl-barrio').value = c.barrio||'';
-  document.getElementById('cl-direccion').value = c.direccion||'';
-  document.getElementById('cl-telefono').value = c.telefono||'';
-  document.getElementById('cl-correo').value = c.correo||'';
-  window.scrollTo({top:0, behavior:'smooth'});
-}
-async function guardarClienteForm(){
-  const data = leerCamposCliente('cl');
-  if(!data.numeroDocumento || !data.nombreRazonSocial){ toast('Documento y nombre son obligatorios.'); return; }
-  const editId = document.getElementById('cl-edit-id').value;
-  if(editId){
-    await db.collection('clientes').doc(editId).update(data);
-    await registrarHistorial('Cliente editado', data.nombreRazonSocial);
-  } else {
-    await db.collection('clientes').add({...data, creadoEn: firebase.firestore.FieldValue.serverTimestamp()});
-    await registrarHistorial('Cliente creado', data.nombreRazonSocial);
-  }
-  toast('Cliente guardado.');
-  limpiarFormCliente();
-}
 function renderClientes(){
   const el = document.getElementById('tabla-clientes');
   if(!el) return;
@@ -708,7 +785,7 @@ function renderClientes(){
       <td>${c.tipoDocumento} ${c.numeroDocumento}</td>
       <td>${c.ciudad||'—'}</td>
       <td>${c.telefono||'—'}</td>
-      <td><button class="ghost small" onclick="editarClienteEnVista('${c.id}')">Editar</button></td>
+      <td><button class="ghost small" onclick="abrirModalCliente({editId:'${c.id}'})">Editar</button></td>
     </tr>`).join('')}
   </tbody></table>`;
 }
@@ -737,12 +814,8 @@ function renderAnalisisClientes(){
     let promedioDias = '—';
     if(fechas.length>=2){
       const dias = [];
-      for(let i=1;i<fechas.length;i++){
-        const d1=new Date(fechas[i-1]), d2=new Date(fechas[i]);
-        dias.push((d2-d1)/(1000*60*60*24));
-      }
-      const prom = dias.reduce((s,d)=>s+d,0)/dias.length;
-      promedioDias = Math.round(prom) + ' días';
+      for(let i=1;i<fechas.length;i++){ const d1=new Date(fechas[i-1]), d2=new Date(fechas[i]); dias.push((d2-d1)/(1000*60*60*24)); }
+      promedioDias = Math.round(dias.reduce((s,d)=>s+d,0)/dias.length) + ' días';
     }
     return { nombre:c.nombreRazonSocial, numPedidos: pedidosCliente.length, totalBolsas,
       primerPedido: fechas[0]||'—', ultimoPedido: fechas[fechas.length-1]||'—', promedioDias };
@@ -751,6 +824,12 @@ function renderAnalisisClientes(){
   el.innerHTML = `<table><thead><tr><th>Cliente</th><th>Pedidos</th><th>Bolsas totales</th><th>Primer pedido</th><th>Último pedido</th><th>Frecuencia promedio</th></tr></thead><tbody>
     ${filas.map(f=>`<tr><td>${f.nombre}</td><td>${f.numPedidos}</td><td>${f.totalBolsas}</td><td>${f.primerPedido}</td><td>${f.ultimoPedido}</td><td>${f.promedioDias}</td></tr>`).join('')}
   </tbody></table>`;
+}
+function mostrarClienteTab(tab, btn){
+  document.querySelectorAll('#view-clientes .subtab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('cliente-'+tab).classList.add('active');
+  document.querySelectorAll('#cliente-tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
 }
 
 /* ============ USUARIOS ============ */
@@ -788,12 +867,40 @@ function renderUsuarios(){
   </tbody></table>`;
 }
 
-/* ============ PEDIDOS ============ */
+/* ============ PRECIO / STOCK Y PEDIDOS ============ */
+function aplicarPrecioAlFormulario(){
+  const input = document.getElementById('np-valor');
+  if(!input || !currentUser) return;
+  if(currentUser.rol !== 'superadmin'){
+    input.value = cache.precioEstandar || '';
+    input.readOnly = true;
+  } else {
+    input.readOnly = false;
+    if(!input.value) input.value = cache.precioEstandar || '';
+  }
+}
+async function guardarPrecioEstandar(){
+  const valor = parseFloat(document.getElementById('precio-estandar').value);
+  const stockMin = parseFloat(document.getElementById('stock-minimo').value) || 0;
+  if(!valor || valor<=0){ toast('Ingresa un valor válido de precio.'); return; }
+  await db.collection('config').doc('precios').set({
+    valorBolsaEstandar: valor, stockMinimo: stockMin, actualizadoPor: currentUser.nombre,
+    actualizadoEn: firebase.firestore.FieldValue.serverTimestamp(), actualizadoEnLabel: nowLabel()
+  });
+  await registrarHistorial('Configuración de precio/stock actualizada', `Valor por bolsa: ${fmtCOP(valor)} · Stock mínimo de alerta: ${stockMin} bolsas`);
+  toast('Configuración guardada.');
+}
 function toggleCuotasField(){
   document.getElementById('np-cuotas-wrap').style.display = document.getElementById('np-formapago').value==='credito' ? 'block':'none';
 }
+function calcularDisponibleReal(){
+  const totalProducido = cache.produccion.reduce((s,r)=>s+r.cantidad,0);
+  const totalEntregado = cache.pedidos.filter(p=>p.estado==='entregado').reduce((s,p)=>s+p.cantidad,0);
+  const totalReservado = cache.pedidos.filter(p=>['programado','en_ruta'].includes(p.estado)).reduce((s,p)=>s+p.cantidad,0);
+  return totalProducido - totalEntregado - totalReservado;
+}
 async function crearPedido(){
-  const clienteId = document.getElementById('np-cliente-select').value;
+  const clienteId = document.getElementById('np-cliente-id').value;
   const direccion = document.getElementById('np-direccion').value.trim();
   const cantidad = parseInt(document.getElementById('np-cantidad').value);
   const valorBolsa = parseFloat(document.getElementById('np-valor').value);
@@ -802,14 +909,22 @@ async function crearPedido(){
   const fechaProgramada = document.getElementById('np-fecha').value;
   const asignadoA = document.getElementById('np-asignado').value;
 
-  if(!clienteId){ toast('Selecciona o crea un cliente.'); return; }
+  if(!clienteId){ toast('Busca y selecciona un cliente por su documento.'); return; }
   if(!direccion || !cantidad || !valorBolsa){ toast('Completa dirección, cantidad y valor.'); return; }
-
+  if(currentUser.rol !== 'superadmin' && cache.precioEstandar && valorBolsa < cache.precioEstandar){
+    toast('Solo el súper administrador puede aplicar un valor menor al precio estándar.');
+    return;
+  }
+  const disponible = calcularDisponibleReal();
+  if(cantidad > disponible){
+    toast(`No hay stock suficiente. Disponible real: ${disponible} bolsas.`);
+    return;
+  }
   const cliente = cache.clientes.find(c=>c.id===clienteId);
   const valorTotal = cantidad * valorBolsa;
   const asignadoUsuario = cache.usuarios.find(u=>u.id===asignadoA);
 
-  await db.collection('pedidos').add({
+  const ref = await db.collection('pedidos').add({
     clienteId, clienteNombre: cliente.nombreRazonSocial, clienteDocumento: `${cliente.tipoDocumento} ${cliente.numeroDocumento}`,
     clienteTelefono: cliente.telefono || '', direccion, cantidad, valorBolsa, valorTotal,
     formaPago, numCuotas, abonos: [],
@@ -818,48 +933,83 @@ async function crearPedido(){
     creadoPor: currentUser.nombre, creadoEnLabel: nowLabel(),
     creadoEn: firebase.firestore.FieldValue.serverTimestamp()
   });
-  await registrarHistorial('Pedido creado', `${cliente.nombreRazonSocial} — ${cantidad} bolsas — ${fmtCOP(valorTotal)} (${PAGO_LABEL[formaPago]})`);
+  await registrarHistorial('Pedido creado', `${cliente.nombreRazonSocial} — ${cantidad} bolsas — ${fmtCOP(valorTotal)} (${PAGO_LABEL[formaPago]})`, {refType:'pedido', refId:ref.id});
   toast('Pedido cargado.');
-  ['np-cantidad','np-valor'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('np-cantidad').value='';
   document.getElementById('np-direccion').value='';
-  document.getElementById('np-cliente-select').value='';
+  document.getElementById('np-cliente-doc').value='';
+  document.getElementById('np-cliente-id').value='';
   document.getElementById('np-cliente-info').style.display='none';
+  aplicarPrecioAlFormulario();
 }
 function saldoPendiente(p){
   const abonado = (p.abonos||[]).reduce((s,a)=>s+a.monto,0);
   return p.valorTotal - abonado;
 }
+
+/* ============ VER PEDIDOS: agrupados por fecha y cliente ============ */
+function filaPedidoHTML(p){
+  const saldo = saldoPendiente(p);
+  const puedeEditar = currentUser.rol==='superadmin';
+  return `<tr>
+    <td>${p.clienteNombre}<br><span style="color:var(--ink-soft);font-size:.78rem;">${p.direccion}</span></td>
+    <td>${p.cantidad}</td>
+    <td>${fmtCOP(p.valorTotal)}</td>
+    <td><span class="badge ${p.formaPago}">${PAGO_LABEL[p.formaPago]}${p.formaPago==='credito'?' · '+p.numCuotas+' cuotas':''}</span></td>
+    <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span>${p.novedadMotivo?`<br><span style="font-size:.72rem;color:var(--clay);">${p.novedadMotivo}</span>`:''}</td>
+    <td>${p.asignadoNombre || '<span style="color:var(--ink-soft)">Sin asignar</span>'}</td>
+    <td>${p.entregadoPor || '—'}</td>
+    <td>${p.formaPago==='credito' ? fmtCOP(saldo) : '—'}</td>
+    <td style="font-size:.78rem;">${p.creadoPor}<br>${p.creadoEnLabel||''}</td>
+    <td style="white-space:nowrap;">
+      <button class="ghost small" onclick="descargarPedidoPDF('${p.id}')">PDF</button>
+      ${p.formaPago==='credito' && saldo>0 ? `<button class="ghost small" onclick="abrirAbono('${p.id}')">Abono</button>` : ''}
+      ${puedeEditar ? `<button class="ghost small" onclick="abrirEdicionSuperadmin('${p.id}')">Editar</button>` : ''}
+      ${puedeEditar ? `<button class="danger small" onclick="eliminarPedido('${p.id}')">Eliminar</button>` : ''}
+    </td>
+  </tr>`;
+}
 function renderPedidos(){
   const el = document.getElementById('tabla-pedidos');
   if(!el) return;
   if(!cache.pedidos.length){ el.innerHTML = '<p class="empty">Todavía no hay pedidos cargados.</p>'; return; }
-  el.innerHTML = `<table><thead><tr>
-    <th>Cliente</th><th>Bolsas</th><th>Valor</th><th>Pago</th><th>Estado</th><th>Repartidor</th><th>Entregó</th><th>Saldo</th><th>Creado por</th><th></th>
-  </tr></thead><tbody>
-  ${cache.pedidos.map(p=>{
-    const saldo = saldoPendiente(p);
-    const puedeEditar = currentUser.rol==='superadmin' && (p.estado==='entregado'||p.estado==='no_entregado');
-    return `<tr>
-      <td>${p.clienteNombre}<br><span style="color:var(--ink-soft);font-size:.78rem;">${p.direccion}</span></td>
-      <td>${p.cantidad}</td>
-      <td>${fmtCOP(p.valorTotal)}</td>
-      <td><span class="badge ${p.formaPago}">${PAGO_LABEL[p.formaPago]}${p.formaPago==='credito'?' · '+p.numCuotas+' cuotas':''}</span></td>
-      <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span></td>
-      <td>${p.asignadoNombre || '<span style="color:var(--ink-soft)">Sin asignar</span>'}</td>
-      <td>${p.entregadoPor || '—'}</td>
-      <td>${p.formaPago==='credito' ? fmtCOP(saldo) : '—'}</td>
-      <td style="font-size:.78rem;">${p.creadoPor}<br>${p.creadoEnLabel||''}</td>
-      <td style="white-space:nowrap;">
-        <button class="ghost small" onclick="descargarPedidoPDF('${p.id}')">PDF</button>
-        ${p.formaPago==='credito' && saldo>0 ? `<button class="ghost small" onclick="abrirAbono('${p.id}')">Abono</button>` : ''}
-        ${puedeEditar ? `<button class="danger small" onclick="abrirEdicionSuperadmin('${p.id}')">Editar</button>` : ''}
-      </td>
-    </tr>`;
-  }).join('')}
-  </tbody></table>`;
+  const grupos = {};
+  cache.pedidos.forEach(p=>{
+    const f = p.fechaProgramada || 'Sin fecha';
+    grupos[f] = grupos[f] || [];
+    grupos[f].push(p);
+  });
+  const fechas = Object.keys(grupos).sort((a,b)=> b.localeCompare(a));
+  el.innerHTML = fechas.map(f=>{
+    const pedidosDia = grupos[f].slice().sort((a,b)=> a.clienteNombre.localeCompare(b.clienteNombre));
+    const totalBolsas = pedidosDia.reduce((s,p)=>s+p.cantidad,0);
+    const totalValor = pedidosDia.reduce((s,p)=>s+p.valorTotal,0);
+    return `<div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">${f} <span style="font-weight:400;color:var(--ink-soft);font-size:.78rem;">(${pedidosDia.length} pedidos · ${totalBolsas} bolsas · ${fmtCOP(totalValor)})</span></h3>
+        <button class="ghost small" onclick="descargarPedidosDiaPDF('${f}')">Descargar PDF del día</button>
+      </div>
+      <table><thead><tr>
+        <th>Cliente</th><th>Bolsas</th><th>Valor</th><th>Pago</th><th>Estado</th><th>Repartidor</th><th>Entregó</th><th>Saldo</th><th>Creado por</th><th></th>
+      </tr></thead><tbody>${pedidosDia.map(filaPedidoHTML).join('')}</tbody></table>
+    </div>`;
+  }).join('');
+}
+async function eliminarPedido(pedidoId){
+  const motivo = prompt('Motivo para eliminar este pedido (obligatorio):');
+  if(!motivo) return;
+  const p = cache.pedidos.find(x=>x.id===pedidoId);
+  if(!p){ toast('Ese pedido ya no existe.'); return; }
+  await db.collection('pedidos').doc(pedidoId).delete();
+  await registrarHistorial('Pedido eliminado (corrección)', `${p.clienteNombre} — ${p.cantidad} bolsas — Motivo: ${motivo}`);
+  toast('Pedido eliminado.');
+}
+function irAEditarPedido(pedidoId){
+  mostrarVista('pedido-ver');
+  setTimeout(()=>abrirEdicionSuperadmin(pedidoId), 150);
 }
 
-/* ============ PDF DE PEDIDO ============ */
+/* ============ PDF DE UN PEDIDO ============ */
 function descargarPedidoPDF(pedidoId){
   const p = cache.pedidos.find(x=>x.id===pedidoId);
   if(!p){ toast('Pedido no encontrado.'); return; }
@@ -868,14 +1018,12 @@ function descargarPedidoPDF(pedidoId){
   let y = 20;
   doc.setFontSize(16); doc.text('Masillas Colombia — Orden de pedido', 14, y); y+=10;
   doc.setFontSize(10); doc.text(`Pedido ID: ${p.id}`, 14, y); y+=10;
-
   doc.setFontSize(12); doc.text('Datos del cliente', 14, y); y+=7;
   doc.setFontSize(10);
   doc.text(`Cliente: ${p.clienteNombre}`, 14, y); y+=6;
   doc.text(`Documento: ${p.clienteDocumento||'—'}`, 14, y); y+=6;
   doc.text(`Teléfono: ${p.clienteTelefono||'—'}`, 14, y); y+=6;
   doc.text(`Dirección de entrega: ${p.direccion}`, 14, y); y+=10;
-
   doc.setFontSize(12); doc.text('Datos del pedido', 14, y); y+=7;
   doc.setFontSize(10);
   doc.text(`Cantidad de bolsas: ${p.cantidad}`, 14, y); y+=6;
@@ -885,20 +1033,57 @@ function descargarPedidoPDF(pedidoId){
   doc.text(`Estado: ${ESTADO_LABEL[p.estado]}`, 14, y); y+=6;
   doc.text(`Fecha programada: ${p.fechaProgramada||'—'}`, 14, y); y+=6;
   doc.text(`Repartidor asignado: ${p.asignadoNombre||'—'}`, 14, y); y+=6;
-  if(p.entregadoPor){ doc.text(`Entregado por: ${p.entregadoPor} (${p.fechaEntrega||''})`, 14, y); y+=6; }
+  if(p.estado==='entregado' && p.receptorNombre){
+    doc.text(`Recibido por: ${p.receptorNombre} (Doc. ${p.receptorDocumento||'—'})`, 14, y); y+=6;
+    if(p.firmaDataUrl){
+      y+=2; doc.text('Firma:', 14, y); y+=2;
+      try{ doc.addImage(p.firmaDataUrl, 'PNG', 14, y, 55, 22); y += 26; }catch(e){}
+    }
+  }
+  if(p.estado==='no_entregado' && p.novedadMotivo){
+    doc.text(`Novedad: ${p.novedadMotivo}`, 14, y); y+=6;
+    if(p.novedadDetalle){ doc.text(`Detalle: ${p.novedadDetalle}`, 14, y); y+=6; }
+  }
   y+=6;
   doc.setFontSize(9); doc.setTextColor(120);
   doc.text(`Orden creada por ${p.creadoPor} el ${p.creadoEnLabel||''}`, 14, y);
   doc.save(`pedido_${p.clienteNombre.replace(/\s+/g,'_')}_${p.id.slice(0,6)}.pdf`);
 }
 
+/* ============ PDF DE TODOS LOS PEDIDOS DE UN DÍA ============ */
+function descargarPedidosDiaPDF(fecha){
+  const pedidosDia = cache.pedidos.filter(p=>(p.fechaProgramada||'Sin fecha')===fecha);
+  if(!pedidosDia.length){ toast('No hay pedidos para esa fecha.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape'});
+  doc.setFontSize(14); doc.text(`Masillas Colombia — Pedidos del ${fecha}`, 14, 15);
+  const filas = pedidosDia.map(p=>[
+    p.clienteNombre, p.clienteDocumento||'—', p.direccion, p.cantidad, fmtCOP(p.valorTotal),
+    PAGO_LABEL[p.formaPago], ESTADO_LABEL[p.estado], p.asignadoNombre||'—', p.entregadoPor||'—'
+  ]);
+  doc.autoTable({
+    startY: 22,
+    head: [['Cliente','Documento','Dirección','Bolsas','Valor','Pago','Estado','Repartidor','Entregó']],
+    body: filas, styles:{fontSize:8}
+  });
+  const totalBolsas = pedidosDia.reduce((s,p)=>s+p.cantidad,0);
+  const totalValor = pedidosDia.reduce((s,p)=>s+p.valorTotal,0);
+  const finalY = doc.lastAutoTable.finalY + 8;
+  doc.setFontSize(10);
+  doc.text(`Total pedidos: ${pedidosDia.length}  ·  Total bolsas: ${totalBolsas}  ·  Total valor: ${fmtCOP(totalValor)}`, 14, finalY);
+  doc.save(`pedidos_${fecha}.pdf`);
+}
+
 /* ============ MIS ENTREGAS ============ */
+function listaEntregas(){
+  let lista = cache.pedidos;
+  if(currentUser.rol==='domiciliario') lista = lista.filter(p=>p.asignadoA===currentUser.id);
+  return lista.filter(p=>['programado','en_ruta','entregado','no_entregado'].includes(p.estado));
+}
 function renderEntregas(){
   const el = document.getElementById('tabla-entregas');
   if(!el) return;
-  let lista = cache.pedidos;
-  if(currentUser.rol==='domiciliario') lista = lista.filter(p=>p.asignadoA===currentUser.id);
-  lista = lista.filter(p=>['programado','en_ruta','entregado','no_entregado'].includes(p.estado));
+  const lista = listaEntregas();
   if(!lista.length){ el.innerHTML = '<p class="empty">No tienes entregas asignadas.</p>'; return; }
   el.innerHTML = `<table><thead><tr><th>Cliente</th><th>Dirección</th><th>Bolsas</th><th>Pago</th><th>Estado</th><th>Entregó</th><th></th></tr></thead><tbody>
   ${lista.map(p=>{
@@ -906,37 +1091,99 @@ function renderEntregas(){
     return `<tr>
       <td>${p.clienteNombre}</td><td>${p.direccion}</td><td>${p.cantidad}</td>
       <td><span class="badge ${p.formaPago}">${PAGO_LABEL[p.formaPago]}</span></td>
-      <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span></td>
+      <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span>${p.novedadMotivo?`<br><span style="font-size:.72rem;color:var(--clay);">${p.novedadMotivo}</span>`:''}</td>
       <td>${p.entregadoPor || '—'}</td>
-      <td>${pendiente ? `<button class="primary small" onclick="abrirModalEntrega('${p.id}')">Confirmar entrega</button>` : ''}
+      <td>${pendiente ? `<button class="primary small" onclick="abrirModalEntrega('${p.id}')">Confirmar / novedad</button>` : ''}
           ${p.formaPago==='credito' && saldoPendiente(p)>0 ? `<button class="ghost small" onclick="abrirAbono('${p.id}')">Abono</button>` : ''}
       </td>
     </tr>`;
   }).join('')}
   </tbody></table>`;
 }
+function descargarEntregasExcel(){
+  const lista = listaEntregas();
+  if(!lista.length){ toast('No hay entregas para exportar.'); return; }
+  const filas = lista.map(p=>({
+    Cliente: p.clienteNombre, Dirección: p.direccion, Bolsas: p.cantidad, 'Forma de pago': PAGO_LABEL[p.formaPago],
+    Estado: ESTADO_LABEL[p.estado], Novedad: p.novedadMotivo||'', 'Entregó': p.entregadoPor||'', 'Fecha entrega': p.fechaEntrega||''
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
+  XLSX.writeFile(wb, `entregas_masicolpos_${hoyISO()}.xlsx`);
+}
 
 function abrirModal(id){ document.getElementById(id).classList.add('active'); }
 function cerrarModal(id){ document.getElementById(id).classList.remove('active'); }
+
+/* ============ CONFIRMAR ENTREGA / NOVEDAD (con firma) ============ */
+function initFirmaCanvas(){
+  const canvas = document.getElementById('firma-canvas');
+  if(!canvas) return;
+  firmaCtx = canvas.getContext('2d');
+  firmaCtx.clearRect(0,0,canvas.width,canvas.height);
+  firmaTieneTrazo = false;
+  firmaCtx.lineWidth = 2; firmaCtx.lineCap = 'round'; firmaCtx.strokeStyle = '#1E3245';
+  const pos = (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (clientX-rect.left) * (canvas.width/rect.width), y: (clientY-rect.top) * (canvas.height/rect.height) };
+  };
+  const start = (e)=>{ e.preventDefault(); firmaDibujando = true; const p = pos(e); firmaCtx.beginPath(); firmaCtx.moveTo(p.x,p.y); };
+  const move = (e)=>{ if(!firmaDibujando) return; e.preventDefault(); const p = pos(e); firmaCtx.lineTo(p.x,p.y); firmaCtx.stroke(); firmaTieneTrazo = true; };
+  const end = ()=>{ firmaDibujando = false; };
+  canvas.onmousedown = start; canvas.onmousemove = move; canvas.onmouseup = end; canvas.onmouseleave = end;
+  canvas.ontouchstart = start; canvas.ontouchmove = move; canvas.ontouchend = end;
+}
+function limpiarFirma(){ initFirmaCanvas(); }
+function toggleEntregaCampos(){
+  const entregado = document.getElementById('me-estado').value === 'entregado';
+  document.getElementById('me-entregado-campos').style.display = entregado ? 'block':'none';
+  document.getElementById('me-novedad-campos').style.display = entregado ? 'none':'block';
+  if(entregado) setTimeout(initFirmaCanvas, 30);
+}
 function abrirModalEntrega(pedidoId){
   document.getElementById('me-pedido-id').value = pedidoId;
   document.getElementById('me-estado').value = 'entregado';
+  document.getElementById('me-receptor-nombre').value = '';
+  document.getElementById('me-receptor-doc').value = '';
+  document.getElementById('me-novedad-detalle').value = '';
+  document.getElementById('me-novedad-motivo').value = 'Cliente ausente';
+  toggleEntregaCampos();
   abrirModal('modal-entrega');
 }
 async function confirmarEntrega(){
   const id = document.getElementById('me-pedido-id').value;
   const estado = document.getElementById('me-estado').value;
   const pedido = cache.pedidos.find(p=>p.id===id);
-  const update = {
-    estado, entregadoEn: firebase.firestore.FieldValue.serverTimestamp(),
-    entregadoPor: currentUser.nombre, fechaEntrega: hoyISO()
-  };
-  if(estado==='entregado' && pedido.formaPago!=='credito'){
-    update.abonos = [{ monto: pedido.valorTotal, metodo: pedido.formaPago, fecha: nowLabel() }];
+  const update = { estado, entregadoEn: firebase.firestore.FieldValue.serverTimestamp(), entregadoPor: currentUser.nombre, fechaEntrega: hoyISO() };
+
+  if(estado === 'entregado'){
+    const nombre = document.getElementById('me-receptor-nombre').value.trim();
+    const documento = document.getElementById('me-receptor-doc').value.trim();
+    if(!nombre || !documento){ toast('Ingresa nombre y documento de quien recibe.'); return; }
+    if(!firmaTieneTrazo){ toast('Se necesita la firma de quien recibe para confirmar la entrega.'); return; }
+    const canvas = document.getElementById('firma-canvas');
+    update.receptorNombre = nombre;
+    update.receptorDocumento = documento;
+    update.firmaDataUrl = canvas.toDataURL('image/png');
+    update.novedadMotivo = firebase.firestore.FieldValue.delete();
+    update.novedadDetalle = firebase.firestore.FieldValue.delete();
+    if(pedido.formaPago !== 'credito'){
+      update.abonos = [{ monto: pedido.valorTotal, metodo: pedido.formaPago, fecha: nowLabel(), fechaISO: hoyISO() }];
+    }
+  } else {
+    update.novedadMotivo = document.getElementById('me-novedad-motivo').value;
+    update.novedadDetalle = document.getElementById('me-novedad-detalle').value.trim();
   }
+
   await db.collection('pedidos').doc(id).update(update);
-  await registrarHistorial('Entrega confirmada', `${pedido.clienteNombre} — ${ESTADO_LABEL[estado]} — por ${currentUser.nombre}`);
-  toast('Entrega registrada.');
+  const detalleHist = estado==='entregado'
+    ? `${pedido.clienteNombre} — Entregado a ${update.receptorNombre} (${update.receptorDocumento}) — por ${currentUser.nombre}`
+    : `${pedido.clienteNombre} — Novedad: ${update.novedadMotivo} — por ${currentUser.nombre} (bolsas reintegradas a stock)`;
+  await registrarHistorial(estado==='entregado' ? 'Entrega confirmada' : 'Novedad de entrega', detalleHist, {refType:'pedido', refId:id});
+  toast(estado==='entregado' ? 'Entrega registrada.' : 'Novedad registrada. Bolsas reintegradas al stock.');
   cerrarModal('modal-entrega');
 }
 
@@ -958,31 +1205,40 @@ async function guardarAbono(){
   const metodo = document.getElementById('ab-metodo').value;
   const p = cache.pedidos.find(x=>x.id===id);
   if(!monto || monto<=0){ toast('Ingresa un monto válido.'); return; }
-  const nuevosAbonos = [...(p.abonos||[]), { monto, metodo, fecha: nowLabel() }];
+  const nuevosAbonos = [...(p.abonos||[]), { monto, metodo, fecha: nowLabel(), fechaISO: hoyISO() }];
   await db.collection('pedidos').doc(id).update({ abonos: nuevosAbonos });
-  await registrarHistorial('Abono registrado', `${p.clienteNombre} — ${fmtCOP(monto)} (${metodo})`);
+  await registrarHistorial('Abono registrado', `${p.clienteNombre} — ${fmtCOP(monto)} (${metodo})`, {refType:'pedido', refId:id});
   toast('Abono guardado.');
   cerrarModal('modal-abono');
 }
 
-/* ============ EDICIÓN SÚPER ADMIN ============ */
+/* ============ EDICIÓN / CORRECCIÓN SÚPER ADMIN ============ */
 function abrirEdicionSuperadmin(pedidoId){
   const p = cache.pedidos.find(x=>x.id===pedidoId);
+  if(!p){ toast('Ese pedido ya no existe.'); return; }
   document.getElementById('ed-pedido-id').value = pedidoId;
   document.getElementById('ed-cantidad').value = p.cantidad;
+  document.getElementById('ed-valorbolsa').value = p.valorBolsa;
   document.getElementById('ed-estado').value = p.estado;
+  document.getElementById('ed-reset-abonos').checked = false;
   document.getElementById('ed-motivo').value = '';
   abrirModal('modal-editar-superadmin');
 }
 async function guardarEdicionSuperadmin(){
   const id = document.getElementById('ed-pedido-id').value;
   const nuevaCantidad = parseInt(document.getElementById('ed-cantidad').value);
+  const nuevoValorBolsa = parseFloat(document.getElementById('ed-valorbolsa').value);
   const nuevoEstado = document.getElementById('ed-estado').value;
   const motivo = document.getElementById('ed-motivo').value.trim();
+  const resetAbonos = document.getElementById('ed-reset-abonos').checked;
   const p = cache.pedidos.find(x=>x.id===id);
   if(!motivo){ toast('El motivo es obligatorio para este cambio.'); return; }
-  await db.collection('pedidos').doc(id).update({ cantidad: nuevaCantidad, valorTotal: nuevaCantidad * p.valorBolsa, estado: nuevoEstado });
-  await registrarHistorial('Edición de súper admin', `${p.clienteNombre}: cantidad ${p.cantidad}→${nuevaCantidad}, estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}. Motivo: ${motivo}`);
+  const update = { cantidad: nuevaCantidad, valorBolsa: nuevoValorBolsa, valorTotal: nuevaCantidad*nuevoValorBolsa, estado: nuevoEstado };
+  if(resetAbonos) update.abonos = [];
+  await db.collection('pedidos').doc(id).update(update);
+  await registrarHistorial('Edición de súper admin',
+    `${p.clienteNombre}: cantidad ${p.cantidad}→${nuevaCantidad}, valor/bolsa ${fmtCOP(p.valorBolsa)}→${fmtCOP(nuevoValorBolsa)}, estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}${resetAbonos?' · pagos reiniciados':''}. Motivo: ${motivo}`,
+    {refType:'pedido', refId:id});
   toast('Cambio guardado y registrado en el historial.');
   cerrarModal('modal-editar-superadmin');
 }
@@ -992,11 +1248,11 @@ async function registrarProduccion(){
   const fecha = document.getElementById('prod-fecha').value;
   const cantidad = parseInt(document.getElementById('prod-cantidad').value);
   if(!fecha || !cantidad){ toast('Completa fecha y cantidad.'); return; }
-  await db.collection('produccion').add({
+  const ref = await db.collection('produccion').add({
     fecha, cantidad, registradoPor: currentUser.nombre, horaRegistro: nowTimeLabel(),
     creadoEn: firebase.firestore.FieldValue.serverTimestamp()
   });
-  await registrarHistorial('Producción registrada', `${cantidad} bolsas el ${fecha}`);
+  await registrarHistorial('Producción registrada', `${cantidad} bolsas el ${fecha}`, {refType:'produccion', refId:ref.id});
   toast('Producción registrada.');
   document.getElementById('prod-cantidad').value = '';
 }
@@ -1004,20 +1260,53 @@ function renderProduccion(){
   const el = document.getElementById('tabla-produccion');
   if(!el) return;
   if(!cache.produccion.length){ el.innerHTML = '<p class="empty">Sin registros todavía.</p>'; return; }
-  el.innerHTML = `<table><thead><tr><th>Fecha</th><th>Bolsas</th><th>Hora de registro</th><th>Registrado por</th></tr></thead><tbody>
-    ${cache.produccion.slice(0,80).map(r=>`<tr><td>${r.fecha}</td><td>${r.cantidad}</td><td>${r.horaRegistro||'—'}</td><td>${r.registradoPor}</td></tr>`).join('')}
+  const puedeEditar = currentUser.rol==='superadmin';
+  el.innerHTML = `<table><thead><tr><th>Fecha</th><th>Bolsas</th><th>Hora de registro</th><th>Registrado por</th><th></th></tr></thead><tbody>
+    ${cache.produccion.slice(0,80).map(r=>`<tr><td>${r.fecha}</td><td>${r.cantidad}</td><td>${r.horaRegistro||'—'}</td><td>${r.registradoPor}</td>
+      <td>${puedeEditar ? `<button class="ghost small" onclick="editarProduccion('${r.id}')">Editar</button> <button class="danger small" onclick="eliminarProduccion('${r.id}')">Eliminar</button>` : ''}</td></tr>`).join('')}
   </tbody></table>`;
+}
+async function editarProduccion(prodId){
+  const r = cache.produccion.find(x=>x.id===prodId);
+  if(!r){ toast('Ese registro ya no existe.'); return; }
+  const nuevaCantidad = prompt('Nueva cantidad de bolsas:', r.cantidad);
+  if(nuevaCantidad===null) return;
+  const cant = parseInt(nuevaCantidad);
+  if(!cant || cant<=0){ toast('Cantidad inválida.'); return; }
+  await db.collection('produccion').doc(prodId).update({cantidad: cant});
+  await registrarHistorial('Registro de producción editado (corrección)', `${r.fecha}: ${r.cantidad}→${cant} bolsas`, {refType:'produccion', refId:prodId});
+  toast('Registro actualizado.');
+}
+async function eliminarProduccion(prodId){
+  const motivo = prompt('Motivo para eliminar este registro (obligatorio):');
+  if(!motivo) return;
+  const r = cache.produccion.find(x=>x.id===prodId);
+  if(!r){ toast('Ese registro ya no existe.'); return; }
+  await db.collection('produccion').doc(prodId).delete();
+  await registrarHistorial('Registro de producción eliminado (corrección)', `${r.cantidad} bolsas del ${r.fecha} — Motivo: ${motivo}`);
+  toast('Registro eliminado.');
 }
 
 /* ============ INVENTARIO ============ */
 function renderInventario(){
-  const totalProducido = cache.produccion.reduce((s,r)=>s+r.cantidad,0);
-  const totalEntregado = cache.pedidos.filter(p=>p.estado==='entregado').reduce((s,p)=>s+p.cantidad,0);
   const bInv = document.getElementById('inv-producido');
   if(!bInv) return;
+  const totalProducido = cache.produccion.reduce((s,r)=>s+r.cantidad,0);
+  const totalEntregado = cache.pedidos.filter(p=>p.estado==='entregado').reduce((s,p)=>s+p.cantidad,0);
+  const totalReservado = cache.pedidos.filter(p=>['programado','en_ruta'].includes(p.estado)).reduce((s,p)=>s+p.cantidad,0);
+  const disponibleReal = totalProducido - totalEntregado - totalReservado;
+
   document.getElementById('inv-producido').textContent = totalProducido.toLocaleString('es-CO');
   document.getElementById('inv-entregado').textContent = totalEntregado.toLocaleString('es-CO');
-  document.getElementById('inv-disponible').textContent = (totalProducido-totalEntregado).toLocaleString('es-CO');
+  document.getElementById('inv-reservado').textContent = totalReservado.toLocaleString('es-CO');
+  const dispBox = document.getElementById('inv-disponible');
+  dispBox.textContent = disponibleReal.toLocaleString('es-CO');
+  const dispParent = dispBox.closest('.box');
+  const critico = cache.stockMinimo>0 && disponibleReal <= cache.stockMinimo;
+  dispParent.style.background = critico ? '#FBEAE4' : '#fff';
+  dispParent.style.borderColor = critico ? 'var(--clay)' : 'var(--line)';
+  dispBox.style.color = critico ? 'var(--clay)' : 'var(--navy-deep)';
+  document.getElementById('inv-alerta-critica').style.display = critico ? 'block' : 'none';
 
   const mesFiltro = document.getElementById('inv-mes').value || mesISO();
   const prodMes = cache.produccion.filter(r=>r.fecha && r.fecha.startsWith(mesFiltro)).reduce((s,r)=>s+r.cantidad,0);
@@ -1025,7 +1314,6 @@ function renderInventario(){
   document.getElementById('inv-mes-producido').textContent = prodMes.toLocaleString('es-CO');
   document.getElementById('inv-mes-entregado').textContent = entMes.toLocaleString('es-CO');
 
-  // Detalle por fecha (todo el histórico, con acumulado), filtrado visualmente al mes elegido
   const porFecha = {};
   cache.produccion.forEach(r=>{ porFecha[r.fecha] = porFecha[r.fecha] || {producido:0, entregado:0}; porFecha[r.fecha].producido += r.cantidad; });
   cache.pedidos.filter(p=>p.estado==='entregado' && p.fechaEntrega).forEach(p=>{
@@ -1046,12 +1334,161 @@ function renderInventario(){
   </tbody></table>`;
 }
 
+/* ============ TESORERÍA ============ */
+function mostrarTesoTab(tab, btn){
+  document.querySelectorAll('#view-tesoreria .subtab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('teso-'+tab).classList.add('active');
+  document.querySelectorAll('#teso-tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function todosLosAbonos(){
+  const lista = [];
+  cache.pedidos.forEach(p=>{
+    (p.abonos||[]).forEach(a=>{
+      lista.push({ ...a, clienteNombre: p.clienteNombre, pedidoId: p.id,
+        tipo: p.formaPago==='credito' ? 'Abono a crédito' : 'Pago total' });
+    });
+  });
+  return lista.sort((a,b)=> (b.fechaISO||'').localeCompare(a.fechaISO||''));
+}
+function renderTesoreria(){
+  const box = document.getElementById('teso-valor-inventario');
+  if(!box) return;
+
+  const totalProducido = cache.produccion.reduce((s,r)=>s+r.cantidad,0);
+  const totalEntregado = cache.pedidos.filter(p=>p.estado==='entregado').reduce((s,p)=>s+p.cantidad,0);
+  const totalReservado = cache.pedidos.filter(p=>['programado','en_ruta'].includes(p.estado)).reduce((s,p)=>s+p.cantidad,0);
+  const disponibleReal = totalProducido - totalEntregado - totalReservado;
+  document.getElementById('teso-valor-inventario').textContent = fmtCOP(disponibleReal * (cache.precioEstandar||0));
+
+  const hoy = hoyISO();
+  const abonos = todosLosAbonos();
+  const efectivoHoy = abonos.filter(a=>a.fechaISO===hoy && a.metodo==='efectivo').reduce((s,a)=>s+a.monto,0);
+  const transferenciaHoy = abonos.filter(a=>a.fechaISO===hoy && a.metodo==='transferencia').reduce((s,a)=>s+a.monto,0);
+  document.getElementById('teso-efectivo-hoy').textContent = fmtCOP(efectivoHoy);
+  document.getElementById('teso-transferencia-hoy').textContent = fmtCOP(transferenciaHoy);
+
+  const carteraTotal = cache.pedidos.filter(p=>p.formaPago==='credito').reduce((s,p)=>s+Math.max(saldoPendiente(p),0),0);
+  document.getElementById('teso-cartera-total').textContent = fmtCOP(carteraTotal);
+  document.getElementById('teso-cartera-total-2').textContent = fmtCOP(carteraTotal);
+
+  const mes = mesISO();
+  const ventasMes = cache.pedidos.filter(p=>p.fechaProgramada && p.fechaProgramada.startsWith(mes)).reduce((s,p)=>s+p.valorTotal,0);
+  document.getElementById('teso-ventas-mes').textContent = fmtCOP(ventasMes);
+
+  const pendientesHoy = cache.pedidos.filter(p=>p.fechaProgramada===hoy && ['programado','en_ruta'].includes(p.estado));
+  const pendBox = document.getElementById('teso-pedidos-pendientes-hoy');
+  pendBox.innerHTML = pendientesHoy.length
+    ? `<table><thead><tr><th>Cliente</th><th>Bolsas</th><th>Estado</th><th>Repartidor</th></tr></thead><tbody>
+        ${pendientesHoy.map(p=>`<tr><td>${p.clienteNombre}</td><td>${p.cantidad}</td><td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span></td><td>${p.asignadoNombre||'Sin asignar'}</td></tr>`).join('')}
+      </tbody></table>`
+    : '<p class="empty">No hay pedidos de hoy pendientes por cerrar.</p>';
+
+  const movBox = document.getElementById('tabla-movimientos');
+  movBox.innerHTML = abonos.length
+    ? `<table><thead><tr><th>Fecha</th><th>Cliente</th><th>Tipo</th><th>Método</th><th>Monto</th></tr></thead><tbody>
+        ${abonos.map(a=>`<tr><td>${a.fecha}</td><td>${a.clienteNombre}</td><td>${a.tipo}</td><td><span class="badge ${a.metodo}">${a.metodo==='efectivo'?'Efectivo':'Transferencia'}</span></td><td>${fmtCOP(a.monto)}</td></tr>`).join('')}
+      </tbody></table>`
+    : '<p class="empty">Aún no se han registrado pagos.</p>';
+
+  const cartera = cache.pedidos.filter(p=>p.formaPago==='credito' && saldoPendiente(p)>0);
+  const carteraBox = document.getElementById('tabla-cartera');
+  carteraBox.innerHTML = cartera.length
+    ? `<table><thead><tr><th>Cliente</th><th>Valor total</th><th>Abonado</th><th>Saldo</th><th>Cuotas</th><th>Fecha pedido</th></tr></thead><tbody>
+        ${cartera.map(p=>`<tr><td>${p.clienteNombre}</td><td>${fmtCOP(p.valorTotal)}</td><td>${fmtCOP((p.abonos||[]).reduce((s,a)=>s+a.monto,0))}</td>
+          <td>${fmtCOP(saldoPendiente(p))}</td><td>${(p.abonos||[]).length}/${p.numCuotas||'—'}</td><td>${p.fechaProgramada||'—'}</td></tr>`).join('')}
+      </tbody></table>`
+    : '<p class="empty">No hay cartera pendiente por cobrar.</p>';
+
+  renderCajaTab();
+  renderTablaCajas();
+}
+function renderCajaTab(){
+  const cont = document.getElementById('teso-caja-card');
+  if(!cont) return;
+  const hoy = hoyISO();
+  const cajaHoy = cache.cajas.find(c=>c.fecha===hoy);
+
+  if(!cajaHoy || !cajaHoy.abierta){
+    cont.innerHTML = `<h3>Abrir caja de hoy</h3>
+      <p style="font-size:.85rem;color:var(--ink-soft);">Registra con cuánto efectivo arranca la caja hoy antes de recibir pagos.</p>
+      <div class="field" style="max-width:220px;"><label>Base inicial en efectivo</label><input id="caja-base" type="number" min="0"></div>
+      <button class="primary" onclick="abrirCaja()">Abrir caja</button>`;
+    return;
+  }
+  if(cajaHoy.cerrada){
+    cont.innerHTML = `<h3>Caja de hoy <span class="badge cerrada">Cerrada</span></h3>
+      <p>Base inicial: ${fmtCOP(cajaHoy.baseInicial)} · Efectivo esperado: ${fmtCOP(cajaHoy.efectivoEsperado)} · Contado: ${fmtCOP(cajaHoy.efectivoContado)}</p>
+      <p>Diferencia: <b>${fmtCOP(cajaHoy.diferencia)}</b> · Cerrada por ${cajaHoy.cerradoPor} a las ${cajaHoy.cerradoEnLabel||''}</p>`;
+    return;
+  }
+  const efectivoHoy = todosLosAbonos().filter(a=>a.fechaISO===hoy && a.metodo==='efectivo').reduce((s,a)=>s+a.monto,0);
+  const esperado = cajaHoy.baseInicial + efectivoHoy;
+  cont.innerHTML = `<h3>Caja de hoy <span class="badge abierta">Abierta</span></h3>
+    <p>Base inicial: ${fmtCOP(cajaHoy.baseInicial)} (abierta por ${cajaHoy.abiertoPor})</p>
+    <p>Efectivo recibido hoy: ${fmtCOP(efectivoHoy)} · <b>Total esperado en caja: ${fmtCOP(esperado)}</b></p>
+    <div class="field" style="max-width:220px;"><label>Efectivo contado al cierre</label><input id="caja-contado" type="number" min="0"></div>
+    <button class="danger" onclick="cerrarCaja()">Cerrar caja</button>`;
+}
+async function abrirCaja(){
+  const base = parseFloat(document.getElementById('caja-base').value);
+  if(isNaN(base) || base<0){ toast('Ingresa el valor de la base inicial.'); return; }
+  const fecha = hoyISO();
+  await db.collection('cajas').doc(fecha).set({
+    fecha, baseInicial: base, abierta:true, cerrada:false,
+    abiertoPor: currentUser.nombre, abiertoEnLabel: nowLabel()
+  });
+  await registrarHistorial('Caja abierta', `Base inicial ${fmtCOP(base)} por ${currentUser.nombre}`);
+  toast('Caja abierta.');
+}
+async function cerrarCaja(){
+  const fecha = hoyISO();
+  const cajaHoy = cache.cajas.find(c=>c.fecha===fecha);
+  if(!cajaHoy || !cajaHoy.abierta){ toast('Primero abre la caja de hoy.'); return; }
+  const contado = parseFloat(document.getElementById('caja-contado').value);
+  if(isNaN(contado)){ toast('Ingresa el efectivo contado.'); return; }
+  const efectivoHoy = todosLosAbonos().filter(a=>a.fechaISO===fecha && a.metodo==='efectivo').reduce((s,a)=>s+a.monto,0);
+  const esperado = cajaHoy.baseInicial + efectivoHoy;
+  const diferencia = contado - esperado;
+  await db.collection('cajas').doc(fecha).update({
+    cerrada:true, efectivoContado: contado, efectivoEsperado: esperado, diferencia,
+    cerradoPor: currentUser.nombre, cerradoEnLabel: nowLabel()
+  });
+  await registrarHistorial('Caja cerrada', `Esperado ${fmtCOP(esperado)} · Contado ${fmtCOP(contado)} · Diferencia ${fmtCOP(diferencia)}`);
+  toast('Caja cerrada.');
+}
+function renderTablaCajas(){
+  const el = document.getElementById('tabla-cajas');
+  if(!el) return;
+  const cerradas = cache.cajas.filter(c=>c.cerrada);
+  if(!cerradas.length){ el.innerHTML = '<p class="empty">Aún no hay cierres registrados.</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Fecha</th><th>Base inicial</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Cerrada por</th></tr></thead><tbody>
+    ${cerradas.map(c=>`<tr><td>${c.fecha}</td><td>${fmtCOP(c.baseInicial)}</td><td>${fmtCOP(c.efectivoEsperado)}</td><td>${fmtCOP(c.efectivoContado)}</td><td>${fmtCOP(c.diferencia)}</td><td>${c.cerradoPor}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
 /* ============ HISTORIAL ============ */
 function renderHistorial(items){
   const el = document.getElementById('lista-historial');
-  if(!el) return;
+  if(!el || !currentUser) return;
   if(!items.length){ el.innerHTML = '<p class="empty">Sin actividad registrada todavía.</p>'; return; }
-  el.innerHTML = items.map(h=>`<div class="hist-entry"><b>${h.accion}</b> — ${h.detalle}<br>${h.usuario} (${ROLE_LABEL[h.rol]||h.rol}) · ${h.fechaLabel}</div>`).join('');
+  el.innerHTML = items.map(h=>{
+    let acciones = '';
+    if(currentUser.rol==='superadmin'){
+      if(h.refType==='pedido' && h.refId && cache.pedidos.find(p=>p.id===h.refId)){
+        acciones = `<div style="margin-top:.35em;">
+          <button class="ghost small" onclick="irAEditarPedido('${h.refId}')">Editar pedido</button>
+          <button class="danger small" onclick="eliminarPedido('${h.refId}')">Eliminar pedido</button>
+        </div>`;
+      } else if(h.refType==='produccion' && h.refId && cache.produccion.find(r=>r.id===h.refId)){
+        acciones = `<div style="margin-top:.35em;">
+          <button class="ghost small" onclick="editarProduccion('${h.refId}')">Editar cantidad</button>
+          <button class="danger small" onclick="eliminarProduccion('${h.refId}')">Eliminar registro</button>
+        </div>`;
+      }
+    }
+    return `<div class="hist-entry"><b>${h.accion}</b> — ${h.detalle}<br>${h.usuario} (${ROLE_LABEL[h.rol]||h.rol}) · ${h.fechaLabel}${acciones}</div>`;
+  }).join('');
 }
 function descargarHistorialExcel(){
   if(!cache.historial.length){ toast('No hay historial para exportar.'); return; }
