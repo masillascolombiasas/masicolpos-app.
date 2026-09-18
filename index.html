@@ -176,6 +176,7 @@
           </div>
 
           <div class="grid2">
+            <div class="field"><label>N.º orden de compra / consecutivo físico</label><input id="np-orden-compra" type="text" inputmode="numeric" placeholder="Ej: 00125"></div>
             <div class="field"><label>Dirección de entrega</label><input id="np-direccion"></div>
             <div class="field"><label>Cantidad de bolsas</label><input id="np-cantidad" type="number" min="1"></div>
             <div class="field"><label>Valor por bolsa (COP)</label><input id="np-valor" type="number" min="0"></div>
@@ -466,6 +467,7 @@
     <p style="font-size:.82rem;color:var(--clay);">Esta acción queda registrada en el historial con tu usuario y el motivo que escribas.</p>
     <input type="hidden" id="ed-pedido-id">
     <div class="grid2">
+      <div class="field"><label>N.º orden de compra / consecutivo físico</label><input id="ed-orden-compra" type="text" inputmode="numeric"></div>
       <div class="field"><label>Cantidad de bolsas</label><input id="ed-cantidad" type="number" min="1"></div>
       <div class="field"><label>Valor por bolsa (COP)</label><input id="ed-valorbolsa" type="number" min="0"></div>
     </div>
@@ -901,6 +903,7 @@ function calcularDisponibleReal(){
 }
 async function crearPedido(){
   const clienteId = document.getElementById('np-cliente-id').value;
+  const numeroOrdenCompra = document.getElementById('np-orden-compra').value.trim();
   const direccion = document.getElementById('np-direccion').value.trim();
   const cantidad = parseInt(document.getElementById('np-cantidad').value);
   const valorBolsa = parseFloat(document.getElementById('np-valor').value);
@@ -910,6 +913,7 @@ async function crearPedido(){
   const asignadoA = document.getElementById('np-asignado').value;
 
   if(!clienteId){ toast('Busca y selecciona un cliente por su documento.'); return; }
+  if(!numeroOrdenCompra){ toast('Ingresa el número de la orden de compra / consecutivo físico.'); return; }
   if(!direccion || !cantidad || !valorBolsa){ toast('Completa dirección, cantidad y valor.'); return; }
   if(currentUser.rol !== 'superadmin' && cache.precioEstandar && valorBolsa < cache.precioEstandar){
     toast('Solo el súper administrador puede aplicar un valor menor al precio estándar.');
@@ -925,6 +929,7 @@ async function crearPedido(){
   const asignadoUsuario = cache.usuarios.find(u=>u.id===asignadoA);
 
   const ref = await db.collection('pedidos').add({
+    numeroOrdenCompra,
     clienteId, clienteNombre: cliente.nombreRazonSocial, clienteDocumento: `${cliente.tipoDocumento} ${cliente.numeroDocumento}`,
     clienteTelefono: cliente.telefono || '', direccion, cantidad, valorBolsa, valorTotal,
     formaPago, numCuotas, abonos: [],
@@ -936,6 +941,7 @@ async function crearPedido(){
   await registrarHistorial('Pedido creado', `${cliente.nombreRazonSocial} — ${cantidad} bolsas — ${fmtCOP(valorTotal)} (${PAGO_LABEL[formaPago]})`, {refType:'pedido', refId:ref.id});
   toast('Pedido cargado.');
   document.getElementById('np-cantidad').value='';
+  document.getElementById('np-orden-compra').value='';
   document.getElementById('np-direccion').value='';
   document.getElementById('np-cliente-doc').value='';
   document.getElementById('np-cliente-id').value='';
@@ -952,7 +958,8 @@ function filaPedidoHTML(p){
   const saldo = saldoPendiente(p);
   const puedeEditar = currentUser.rol==='superadmin';
   return `<tr>
-    <td>${p.clienteNombre}<br><span style="color:var(--ink-soft);font-size:.78rem;">${p.direccion}</span></td>
+    <td>${p.clienteNombre || 'Cliente sin nombre'}<br><span style="color:var(--ink-soft);font-size:.78rem;">${p.direccion || 'Sin dirección'}</span></td>
+    <td><b>${p.numeroOrdenCompra || '—'}</b></td>
     <td>${p.cantidad}</td>
     <td>${fmtCOP(p.valorTotal)}</td>
     <td><span class="badge ${p.formaPago}">${PAGO_LABEL[p.formaPago]}${p.formaPago==='credito'?' · '+p.numCuotas+' cuotas':''}</span></td>
@@ -994,7 +1001,7 @@ function renderPedidos(){
         <button class="ghost small" onclick="descargarPedidosDiaPDF('${f}')">Descargar PDF del día</button>
       </div>
       <table><thead><tr>
-        <th>Cliente</th><th>Bolsas</th><th>Valor</th><th>Pago</th><th>Estado</th><th>Repartidor</th><th>Entregó</th><th>Saldo</th><th>Creado por</th><th></th>
+        <th>Cliente</th><th>Orden física</th><th>Bolsas</th><th>Valor</th><th>Pago</th><th>Estado</th><th>Repartidor</th><th>Entregó</th><th>Saldo</th><th>Creado por</th><th></th>
       </tr></thead><tbody>${pedidosDia.map(filaPedidoHTML).join('')}</tbody></table>
     </div>`;
   }).join('');
@@ -1014,27 +1021,52 @@ function irAEditarPedido(pedidoId){
 }
 
 /* ============ PDF DE UN PEDIDO ============ */
-function descargarPedidoPDF(pedidoId){
+const LOGO_PDF_URL = 'https://cvdc.com.co/wp-content/uploads/2026/09/Recurso-2-scaled.png';
+function cargarImagenPDF(url){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const timer = setTimeout(()=>reject(new Error('Tiempo agotado cargando logo')), 7000);
+    img.onload = ()=>{ clearTimeout(timer); resolve(img); };
+    img.onerror = ()=>{ clearTimeout(timer); reject(new Error('No se pudo cargar el logo')); };
+    img.src = url;
+  });
+}
+async function descargarPedidoPDF(pedidoId){
   const p = cache.pedidos.find(x=>x.id===pedidoId);
   if(!p){ toast('Pedido no encontrado.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  let y = 20;
-  doc.setFontSize(16); doc.text('Masillas Colombia — Orden de pedido', 14, y); y+=10;
-  doc.setFontSize(10); doc.text(`Pedido ID: ${p.id}`, 14, y); y+=10;
+  let y = 18;
+
+  try{
+    const logo = await cargarImagenPDF(LOGO_PDF_URL);
+    const ratio = logo.naturalWidth && logo.naturalHeight ? logo.naturalWidth/logo.naturalHeight : 2.2;
+    const w = 42;
+    const h = Math.max(12, Math.min(24, w/ratio));
+    doc.addImage(logo, 'PNG', 14, 8, w, h);
+    y = Math.max(y, 8+h+7);
+  }catch(e){
+    console.warn('No se pudo cargar el logo en el PDF:', e);
+    doc.setFontSize(16); doc.text('Masillas Colombia', 14, y); y += 9;
+  }
+
+  doc.setFontSize(16); doc.text('Orden de compra / pedido', 14, y); y+=9;
+  doc.setFontSize(11); doc.text(`Consecutivo físico: ${p.numeroOrdenCompra || 'Sin asignar'}`, 14, y); y+=7;
+  doc.setFontSize(9); doc.text(`Pedido ID: ${p.id}`, 14, y); y+=9;
   doc.setFontSize(12); doc.text('Datos del cliente', 14, y); y+=7;
   doc.setFontSize(10);
-  doc.text(`Cliente: ${p.clienteNombre}`, 14, y); y+=6;
+  doc.text(`Cliente: ${p.clienteNombre || '—'}`, 14, y); y+=6;
   doc.text(`Documento: ${p.clienteDocumento||'—'}`, 14, y); y+=6;
   doc.text(`Teléfono: ${p.clienteTelefono||'—'}`, 14, y); y+=6;
-  doc.text(`Dirección de entrega: ${p.direccion}`, 14, y); y+=10;
+  doc.text(`Dirección de entrega: ${p.direccion||'—'}`, 14, y); y+=10;
   doc.setFontSize(12); doc.text('Datos del pedido', 14, y); y+=7;
   doc.setFontSize(10);
-  doc.text(`Cantidad de bolsas: ${p.cantidad}`, 14, y); y+=6;
-  doc.text(`Valor por bolsa: ${fmtCOP(p.valorBolsa)}`, 14, y); y+=6;
-  doc.text(`Valor total: ${fmtCOP(p.valorTotal)}`, 14, y); y+=6;
-  doc.text(`Forma de pago: ${PAGO_LABEL[p.formaPago]}${p.formaPago==='credito'?' en '+p.numCuotas+' cuotas':''}`, 14, y); y+=6;
-  doc.text(`Estado: ${ESTADO_LABEL[p.estado]}`, 14, y); y+=6;
+  doc.text(`Cantidad de bolsas: ${p.cantidad||0}`, 14, y); y+=6;
+  doc.text(`Valor por bolsa: ${fmtCOP(p.valorBolsa||0)}`, 14, y); y+=6;
+  doc.text(`Valor total: ${fmtCOP(p.valorTotal||0)}`, 14, y); y+=6;
+  doc.text(`Forma de pago: ${PAGO_LABEL[p.formaPago]||'—'}${p.formaPago==='credito'?' en '+p.numCuotas+' cuotas':''}`, 14, y); y+=6;
+  doc.text(`Estado: ${ESTADO_LABEL[p.estado]||p.estado||'—'}`, 14, y); y+=6;
   doc.text(`Fecha programada: ${p.fechaProgramada||'—'}`, 14, y); y+=6;
   doc.text(`Repartidor asignado: ${p.asignadoNombre||'—'}`, 14, y); y+=6;
   if(p.estado==='entregado' && p.receptorNombre){
@@ -1050,10 +1082,9 @@ function descargarPedidoPDF(pedidoId){
   }
   y+=6;
   doc.setFontSize(9); doc.setTextColor(120);
-  doc.text(`Orden creada por ${p.creadoPor} el ${p.creadoEnLabel||''}`, 14, y);
-  doc.save(`pedido_${p.clienteNombre.replace(/\s+/g,'_')}_${p.id.slice(0,6)}.pdf`);
+  doc.text(`Orden creada por ${p.creadoPor||'—'} el ${p.creadoEnLabel||''}`, 14, y);
+  doc.save(`orden_${(p.numeroOrdenCompra||p.id).toString().replace(/[^a-zA-Z0-9_-]/g,'_')}.pdf`);
 }
-
 /* ============ PDF DE TODOS LOS PEDIDOS DE UN DÍA ============ */
 function descargarPedidosDiaPDF(fecha){
   const pedidosDia = cache.pedidos.filter(p=>(p.fechaProgramada||'Sin fecha')===fecha);
@@ -1062,12 +1093,12 @@ function descargarPedidosDiaPDF(fecha){
   const doc = new jsPDF({orientation:'landscape'});
   doc.setFontSize(14); doc.text(`Masillas Colombia — Pedidos del ${fecha}`, 14, 15);
   const filas = pedidosDia.map(p=>[
-    p.clienteNombre, p.clienteDocumento||'—', p.direccion, p.cantidad, fmtCOP(p.valorTotal),
+    p.numeroOrdenCompra||'—', p.clienteNombre||'—', p.clienteDocumento||'—', p.direccion||'—', p.cantidad||0, fmtCOP(p.valorTotal||0),
     PAGO_LABEL[p.formaPago], ESTADO_LABEL[p.estado], p.asignadoNombre||'—', p.entregadoPor||'—'
   ]);
   doc.autoTable({
     startY: 22,
-    head: [['Cliente','Documento','Dirección','Bolsas','Valor','Pago','Estado','Repartidor','Entregó']],
+    head: [['Orden física','Cliente','Documento','Dirección','Bolsas','Valor','Pago','Estado','Repartidor','Entregó']],
     body: filas, styles:{fontSize:8}
   });
   const totalBolsas = pedidosDia.reduce((s,p)=>s+p.cantidad,0);
@@ -1221,6 +1252,7 @@ function abrirEdicionSuperadmin(pedidoId){
   const p = cache.pedidos.find(x=>x.id===pedidoId);
   if(!p){ toast('Ese pedido ya no existe.'); return; }
   document.getElementById('ed-pedido-id').value = pedidoId;
+  document.getElementById('ed-orden-compra').value = p.numeroOrdenCompra || '';
   document.getElementById('ed-cantidad').value = p.cantidad;
   document.getElementById('ed-valorbolsa').value = p.valorBolsa;
   document.getElementById('ed-estado').value = p.estado;
@@ -1230,6 +1262,7 @@ function abrirEdicionSuperadmin(pedidoId){
 }
 async function guardarEdicionSuperadmin(){
   const id = document.getElementById('ed-pedido-id').value;
+  const nuevoNumeroOrden = document.getElementById('ed-orden-compra').value.trim();
   const nuevaCantidad = parseInt(document.getElementById('ed-cantidad').value);
   const nuevoValorBolsa = parseFloat(document.getElementById('ed-valorbolsa').value);
   const nuevoEstado = document.getElementById('ed-estado').value;
@@ -1237,11 +1270,12 @@ async function guardarEdicionSuperadmin(){
   const resetAbonos = document.getElementById('ed-reset-abonos').checked;
   const p = cache.pedidos.find(x=>x.id===id);
   if(!motivo){ toast('El motivo es obligatorio para este cambio.'); return; }
-  const update = { cantidad: nuevaCantidad, valorBolsa: nuevoValorBolsa, valorTotal: nuevaCantidad*nuevoValorBolsa, estado: nuevoEstado };
+  if(!nuevoNumeroOrden){ toast('El número de la orden / consecutivo físico es obligatorio.'); return; }
+  const update = { numeroOrdenCompra: nuevoNumeroOrden, cantidad: nuevaCantidad, valorBolsa: nuevoValorBolsa, valorTotal: nuevaCantidad*nuevoValorBolsa, estado: nuevoEstado };
   if(resetAbonos) update.abonos = [];
   await db.collection('pedidos').doc(id).update(update);
   await registrarHistorial('Edición de súper admin',
-    `${p.clienteNombre}: cantidad ${p.cantidad}→${nuevaCantidad}, valor/bolsa ${fmtCOP(p.valorBolsa)}→${fmtCOP(nuevoValorBolsa)}, estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}${resetAbonos?' · pagos reiniciados':''}. Motivo: ${motivo}`,
+    `${p.clienteNombre}: orden ${p.numeroOrdenCompra||'sin consecutivo'}→${nuevoNumeroOrden}, cantidad ${p.cantidad}→${nuevaCantidad}, valor/bolsa ${fmtCOP(p.valorBolsa)}→${fmtCOP(nuevoValorBolsa)}, estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}${resetAbonos?' · pagos reiniciados':''}. Motivo: ${motivo}`,
     {refType:'pedido', refId:id});
   toast('Cambio guardado y registrado en el historial.');
   cerrarModal('modal-editar-superadmin');
@@ -1421,9 +1455,11 @@ function renderCajaTab(){
     return;
   }
   if(cajaHoy.cerrada){
+    const puedeReabrir = currentUser && currentUser.rol==='superadmin';
     cont.innerHTML = `<h3>Caja de hoy <span class="badge cerrada">Cerrada</span></h3>
-      <p>Base inicial: ${fmtCOP(cajaHoy.baseInicial)} · Efectivo esperado: ${fmtCOP(cajaHoy.efectivoEsperado)} · Contado: ${fmtCOP(cajaHoy.efectivoContado)}</p>
-      <p>Diferencia: <b>${fmtCOP(cajaHoy.diferencia)}</b> · Cerrada por ${cajaHoy.cerradoPor} a las ${cajaHoy.cerradoEnLabel||''}</p>`;
+      <p>Base inicial: ${fmtCOP(cajaHoy.baseInicial)} · Efectivo esperado al cierre: ${fmtCOP(cajaHoy.efectivoEsperado)} · Contado: ${fmtCOP(cajaHoy.efectivoContado)}</p>
+      <p>Diferencia: <b>${fmtCOP(cajaHoy.diferencia)}</b> · Cerrada por ${cajaHoy.cerradoPor} a las ${cajaHoy.cerradoEnLabel||''}</p>
+      ${puedeReabrir ? `<button class="ghost" onclick="reabrirCaja()">Reabrir caja</button>` : '<p style="font-size:.8rem;color:var(--ink-soft);">Solo el súper administrador puede reabrir una caja cerrada.</p>'}`;
     return;
   }
   const efectivoHoy = todosLosAbonos().filter(a=>a.fechaISO===hoy && a.metodo==='efectivo').reduce((s,a)=>s+a.monto,0);
@@ -1444,6 +1480,18 @@ async function abrirCaja(){
   });
   await registrarHistorial('Caja abierta', `Base inicial ${fmtCOP(base)} por ${currentUser.nombre}`);
   toast('Caja abierta.');
+}
+async function reabrirCaja(){
+  if(!currentUser || currentUser.rol!=='superadmin'){ toast('Solo el súper administrador puede reabrir la caja.'); return; }
+  const fecha = hoyISO();
+  const cajaHoy = cache.cajas.find(c=>c.fecha===fecha);
+  if(!cajaHoy || !cajaHoy.cerrada){ toast('La caja de hoy no está cerrada.'); return; }
+  if(!confirm('¿Reabrir la caja de hoy? El cierre quedará registrado y la caja volverá a estar disponible para registrar pagos.')) return;
+  await db.collection('cajas').doc(fecha).update({
+    cerrada:false, reabierta:true, reabiertaPor:currentUser.nombre, reabiertaEnLabel:nowLabel()
+  });
+  await registrarHistorial('Caja reabierta', `Se reabrió la caja del ${fecha}. Cierre anterior: ${fmtCOP(cajaHoy.efectivoContado)} contado · diferencia ${fmtCOP(cajaHoy.diferencia)}`);
+  toast('Caja reabierta.');
 }
 async function cerrarCaja(){
   const fecha = hoyISO();
