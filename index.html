@@ -149,9 +149,23 @@
       <img src="https://cvdc.com.co/wp-content/uploads/2026/09/Recurso-3-scaled.png" alt="">
       <span class="brand-text">MasiColPos</span>
     </div>
+    <div style="display:flex;align-items:center;gap:.8em;">
     <div class="who">
       <b id="who-name">—</b>
       <span id="who-role">—</span> · <a href="#" onclick="handleLogout();return false;" style="color:#fff;">Cerrar sesión</a>
+    </div>
+    <div style="position:relative;">
+      <button id="notif-bell" onclick="toggleNotifPanel()" style="position:relative;background:none;border:1px solid rgba(255,255,255,.3);color:#fff;font-size:1.1rem;padding:.4em .6em;">
+        🔔<span id="notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--clay);color:#fff;border-radius:50%;font-size:.65rem;padding:1px 6px;font-weight:700;"></span>
+      </button>
+      <div id="notif-panel" style="display:none;position:absolute;top:110%;right:0;width:300px;max-height:360px;overflow-y:auto;background:#fff;color:var(--ink);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:60;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.7em .9em;border-bottom:1px solid var(--line);">
+          <b style="font-size:.85rem;">Notificaciones</b>
+          <a href="#" onclick="marcarTodasLeidas();return false;" style="font-size:.76rem;">Marcar todas leídas</a>
+        </div>
+        <div id="notif-lista" style="padding:.4em .9em;"></div>
+      </div>
+    </div>
     </div>
   </header>
 
@@ -821,7 +835,7 @@ const PAGO_LABEL = { efectivo:'Efectivo', transferencia:'Transferencia', credito
 
 let currentUser = null;
 let cache = { usuarios:[], pedidos:[], produccion:[], clientes:[], historial:[], cajas:[], precioEstandar:0, stockMinimo:0,
-  egresos:[], proveedores:[], empleados:[], liquidaciones:[] };
+  egresos:[], proveedores:[], empleados:[], liquidaciones:[], notificaciones:[] };
 let balanceChartInstance = null;
 let clienteModalOnSaved = null;
 let firmaCtx = null, firmaDibujando = false, firmaTieneTrazo = false;
@@ -972,6 +986,10 @@ function cargarTodo(){
   db.collection('liquidaciones').orderBy('creadoEnLabel','desc').limit(500).onSnapshot(snap=>{
     cache.liquidaciones = snap.docs.map(d=>({id:d.id, ...d.data()}));
     renderLiquidaciones();
+  });
+  db.collection('notificaciones').where('userId','==', currentUser.id).orderBy('fecha','desc').limit(50).onSnapshot(snap=>{
+    cache.notificaciones = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderNotificaciones();
   });
   db.collection('config').doc('precios').onSnapshot(doc=>{
     const data = doc.exists ? doc.data() : {};
@@ -1269,6 +1287,9 @@ async function crearPedido(){
     creadoEn: firebase.firestore.FieldValue.serverTimestamp()
   });
   await registrarHistorial('Pedido creado', `${cliente.nombreRazonSocial} — ${cantidad} bolsas — ${fmtCOP(valorTotal)} (${PAGO_LABEL[formaPago]})`, {refType:'pedido', refId:ref.id});
+  if(asignadoA){
+    await crearNotificacion(asignadoA, `Nuevo pedido asignado: ${cliente.nombreRazonSocial} — ${cantidad} bolsas — ${direccion}`, ref.id);
+  }
   toast('Pedido cargado.');
   document.getElementById('np-cantidad').value='';
   document.getElementById('np-orden-compra').value='';
@@ -2488,6 +2509,51 @@ function descargarBalancePDF(){
   doc.autoTable({ startY: 22, head:[['Fecha','Cliente','Bolsas','Valor','Estado']], body: filas, styles:{fontSize:9} });
   doc.save(`balance_${prefijo}.pdf`);
 }
+
+/* ============ NOTIFICACIONES INTERNAS ============ */
+async function crearNotificacion(userId, mensaje, pedidoId=null){
+  try{
+    await db.collection('notificaciones').add({
+      userId, mensaje, pedidoId, leida:false,
+      fecha: firebase.firestore.FieldValue.serverTimestamp(), fechaLabel: nowLabel()
+    });
+  }catch(e){ console.error('No se pudo crear la notificación', e); }
+}
+function renderNotificaciones(){
+  const badge = document.getElementById('notif-badge');
+  const lista = document.getElementById('notif-lista');
+  if(!badge || !lista) return;
+  const noLeidas = cache.notificaciones.filter(n=>!n.leida);
+  if(noLeidas.length){ badge.style.display = 'block'; badge.textContent = noLeidas.length; }
+  else { badge.style.display = 'none'; }
+
+  lista.innerHTML = cache.notificaciones.length
+    ? cache.notificaciones.map(n=>`<div onclick="marcarNotificacionLeida('${n.id}')" style="padding:.6em 0;border-bottom:1px dashed var(--line);cursor:pointer;${n.leida?'opacity:.55;':''}">
+        <div style="font-size:.82rem;">${n.mensaje}</div>
+        <div style="font-size:.7rem;color:var(--ink-soft);">${n.fechaLabel||''}</div>
+      </div>`).join('')
+    : '<p class="empty" style="padding:.6em 0;">Sin notificaciones todavía.</p>';
+}
+function toggleNotifPanel(){
+  const panel = document.getElementById('notif-panel');
+  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+}
+async function marcarNotificacionLeida(id){
+  await db.collection('notificaciones').doc(id).update({ leida:true });
+}
+async function marcarTodasLeidas(){
+  const noLeidas = cache.notificaciones.filter(n=>!n.leida);
+  if(!noLeidas.length) return;
+  const batch = db.batch();
+  noLeidas.forEach(n=> batch.update(db.collection('notificaciones').doc(n.id), {leida:true}));
+  await batch.commit();
+}
+document.addEventListener('click', (e)=>{
+  const panel = document.getElementById('notif-panel');
+  const bell = document.getElementById('notif-bell');
+  if(!panel || panel.style.display!=='block') return;
+  if(!panel.contains(e.target) && !bell.contains(e.target)) panel.style.display = 'none';
+});
 </script>
 </body>
 </html>
