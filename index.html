@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 
 <style>
   :root{
@@ -86,6 +87,7 @@
   .badge.entregado{ background:#E1EEE4; color:var(--lime); }
   .badge.no_entregado{ background:#F3DEDA; color:var(--clay); }
   .badge.credito{ background:#F1E6D2; color:var(--amber); }
+  .badge.cartera14{ background:#E5DEF2; color:#5B3E96; }
   .badge.efectivo, .badge.transferencia{ background:#E3EAE6; color:#3A6650; }
   .badge.abierta{ background:#E1EEE4; color:var(--lime); }
   .badge.cerrada{ background:#F3DEDA; color:var(--clay); }
@@ -185,6 +187,7 @@
                 <option value="efectivo">Efectivo</option>
                 <option value="transferencia">Transferencia bancaria</option>
                 <option value="credito">Crédito</option>
+                <option value="cartera14">Cartera 14 (cobro consolidado cada 14 días)</option>
               </select>
             </div>
             <div class="field" id="np-cuotas-wrap" style="display:none;"><label>Número de cuotas</label>
@@ -195,6 +198,8 @@
               <select id="np-asignado"><option value="">Sin asignar todavía</option></select>
             </div>
           </div>
+          <label class="checkbox-label field"><input type="checkbox" id="np-facturar"> Facturar electrónicamente (DIAN)</label>
+          <p style="font-size:.78rem;color:var(--ink-soft);margin-top:-.6em;">Por ahora esto solo queda marcado en el pedido como pendiente de facturar. La integración con Siigo para generar la factura electrónica la revisamos más adelante.</p>
           <button class="primary" onclick="crearPedido()">Cargar pedido</button>
         </div>
       </section>
@@ -275,6 +280,7 @@
         <div class="tabs" id="teso-tabs">
           <button class="active" onclick="mostrarTesoTab('resumen', this)">Resumen</button>
           <button onclick="mostrarTesoTab('movimientos', this)">Movimientos</button>
+          <button onclick="mostrarTesoTab('egresos', this)">Egresos</button>
           <button onclick="mostrarTesoTab('precio', this)">Precio y stock</button>
           <button onclick="mostrarTesoTab('caja', this)">Caja del día</button>
           <button onclick="mostrarTesoTab('cartera', this)">Cartera</button>
@@ -289,6 +295,7 @@
           <div class="stat">
             <div class="box"><div class="num" id="teso-cartera-total">$0</div><div class="lbl">Cartera pendiente por cobrar</div></div>
             <div class="box"><div class="num" id="teso-ventas-mes">$0</div><div class="lbl">Valor total de pedidos este mes</div></div>
+            <div class="box" style="background:#FBEAE4;border-color:var(--clay);"><div class="num" id="teso-egresos-hoy" style="color:var(--clay);">$0</div><div class="lbl">Egresos de hoy</div></div>
           </div>
           <div class="card">
             <h3>Pedidos de hoy sin cerrar</h3>
@@ -299,6 +306,20 @@
 
         <div class="subtab" id="teso-movimientos">
           <div class="card"><div id="tabla-movimientos"></div></div>
+        </div>
+
+        <div class="subtab" id="teso-egresos">
+          <div class="card">
+            <div class="toolbar">
+              <h3 style="margin:0;">Egresos por día</h3>
+              <div style="display:flex;gap:.5em;align-items:end;">
+                <div><label style="margin-bottom:.2em;">Fecha</label><input type="date" id="eg-filtro-fecha" onchange="renderEgresos()"></div>
+                <button class="primary" onclick="abrirModalEgreso()">+ Registrar egreso</button>
+              </div>
+            </div>
+            <div class="stat"><div class="box"><div class="num" id="eg-total-dia">$0</div><div class="lbl">Total egresos del día seleccionado</div></div></div>
+            <div id="tabla-egresos"></div>
+          </div>
         </div>
 
         <div class="subtab" id="teso-precio">
@@ -320,8 +341,13 @@
         </div>
 
         <div class="subtab" id="teso-cartera">
-          <div class="stat"><div class="box"><div class="num" id="teso-cartera-total-2">$0</div><div class="lbl">Total pendiente por cobrar</div></div></div>
+          <div class="stat"><div class="box"><div class="num" id="teso-cartera-total-2">$0</div><div class="lbl">Total pendiente por cobrar (crédito)</div></div></div>
           <div class="card"><div id="tabla-cartera"></div></div>
+          <div class="card">
+            <h3>Cartera 14 — pedidos pendientes de cobro consolidado</h3>
+            <p style="font-size:.85rem;color:var(--ink-soft);">Los pedidos con forma de pago "Cartera 14" se acumulan por cliente sin cobrarse uno por uno. Cuando llegue la fecha pactada con el cliente, genera un único cobro que los marca todos como pagados de una vez.</p>
+            <div id="tabla-cartera14"></div>
+          </div>
         </div>
       </section>
 
@@ -346,6 +372,179 @@
         </div>
         <div class="subtab" id="cliente-analisis">
           <div class="card"><h3>Análisis de pedidos por cliente</h3><div id="tabla-analisis-clientes"></div></div>
+        </div>
+      </section>
+
+      <!-- PROVEEDORES -->
+      <section class="view" id="view-proveedores">
+        <div class="toolbar">
+          <h2 style="margin:0;">Proveedores</h2>
+          <button class="ghost small" onclick="descargarProveedoresExcel()">Descargar listado (Excel)</button>
+        </div>
+        <div class="card">
+          <h3 id="prov-form-titulo">Registrar proveedor</h3>
+          <input type="hidden" id="prov-edit-id">
+          <div class="grid3">
+            <div class="field"><label>Tipo de proveedor</label>
+              <select id="prov-tipopersona"><option value="natural">Persona natural</option><option value="juridica">Persona jurídica</option></select>
+            </div>
+            <div class="field"><label>Tipo de documento</label>
+              <select id="prov-tipodoc"><option value="RUT">RUT</option><option value="CC">Cédula</option></select>
+            </div>
+            <div class="field"><label>Número de documento</label><input id="prov-numdoc"></div>
+          </div>
+          <div class="field"><label>Nombre o razón social</label><input id="prov-nombre"></div>
+          <div class="grid3">
+            <div class="field"><label>Teléfono</label><input id="prov-telefono"></div>
+            <div class="field"><label>Ciudad</label><input id="prov-ciudad"></div>
+            <div class="field"><label>Producto o servicio que provee</label><input id="prov-tipo" placeholder="Ej: Materia prima, transporte, empaques..."></div>
+          </div>
+          <div class="field"><label>Dirección</label><input id="prov-direccion"></div>
+          <div class="field"><label>Actividad económica</label><input id="prov-actividad"></div>
+          <button class="primary" onclick="guardarProveedorForm()">Guardar proveedor</button>
+          <button class="ghost" onclick="limpiarFormProveedor()">Cancelar edición</button>
+        </div>
+        <div class="card">
+          <h3>Listado de proveedores</h3>
+          <div id="tabla-proveedores"></div>
+        </div>
+        <div class="card">
+          <h3>Historial de pagos a proveedores</h3>
+          <p style="font-size:.85rem;color:var(--ink-soft);">Los pagos se registran como egresos desde Tesorería → Egresos, eligiendo el proveedor.</p>
+          <div id="tabla-pagos-proveedores"></div>
+        </div>
+      </section>
+
+      <!-- NÓMINA (solo súper administrador) -->
+      <section class="view" id="view-nomina">
+        <h2>Nómina</h2>
+        <div class="tabs" id="nomina-tabs">
+          <button class="active" onclick="mostrarNominaTab('empleados', this)">Empleados</button>
+          <button onclick="mostrarNominaTab('liquidacion', this)">Liquidación de nómina</button>
+        </div>
+
+        <div class="subtab active" id="nomina-empleados">
+          <div class="card">
+            <h3 id="emp-form-titulo">Registrar empleado</h3>
+            <input type="hidden" id="emp-edit-id">
+            <div class="grid3">
+              <div class="field"><label>Nombre</label><input id="emp-nombre"></div>
+              <div class="field"><label>Apellidos</label><input id="emp-apellidos"></div>
+              <div class="field"><label>Documento de identidad</label><input id="emp-documento"></div>
+            </div>
+            <div class="grid3">
+              <div class="field"><label>Fecha de nacimiento</label><input id="emp-fechanacimiento" type="date" onchange="calcularEdadEmpleado()"></div>
+              <div class="field"><label>Edad</label><input id="emp-edad" type="number" readonly></div>
+              <div class="field"><label>Cargo</label><input id="emp-cargo"></div>
+            </div>
+            <div class="grid2">
+              <div class="field"><label>Número de celular</label><input id="emp-celular"></div>
+              <div class="field"><label>Correo electrónico</label><input id="emp-correo" type="email"></div>
+            </div>
+            <div class="grid3">
+              <div class="field"><label>ARL</label><input id="emp-arl"></div>
+              <div class="field"><label>EPS</label><input id="emp-eps"></div>
+              <div class="field"><label>Fondo de pensiones</label><input id="emp-pension"></div>
+            </div>
+            <div class="grid3">
+              <div class="field"><label>Fondo de cesantías</label><input id="emp-cesantias"></div>
+              <div class="field"><label><b>Salario base (COP)</b></label><input id="emp-salario" type="number" min="0"></div>
+              <div class="field"><label>Estado</label>
+                <select id="emp-activo"><option value="true">Activo</option><option value="false">Inactivo</option></select>
+              </div>
+            </div>
+            <button class="primary" onclick="guardarEmpleadoForm()">Guardar empleado</button>
+            <button class="ghost" onclick="limpiarFormEmpleado()">Cancelar edición</button>
+          </div>
+          <div class="card"><h3>Empleados registrados</h3><div id="tabla-empleados"></div></div>
+        </div>
+
+        <div class="subtab" id="nomina-liquidacion">
+          <div class="card">
+            <h3>Liquidar nómina</h3>
+            <div class="grid3">
+              <div class="field"><label>Empleado</label><select id="liq-empleado" onchange="onSelectEmpleadoLiquidacion()"><option value="">Selecciona un empleado</option></select></div>
+              <div class="field"><label>Mes a liquidar</label><input id="liq-mes" type="month"></div>
+              <div class="field"><label>Días trabajados</label><input id="liq-dias" type="number" min="0" max="31" onchange="calcularLiquidacion()"></div>
+            </div>
+            <div class="grid3">
+              <div class="field"><label>Salario base del mes (COP)</label><input id="liq-salario" type="number" min="0" onchange="calcularLiquidacion()"></div>
+              <div class="field"><label>Comisiones (COP)</label><input id="liq-comisiones" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+              <div class="field"><label>Horas extra (COP)</label><input id="liq-horasextra" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+            </div>
+            <div class="field" style="max-width:260px;"><label>Auxilio de transporte (COP)</label><input id="liq-auxtransporte" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+            <h3 style="margin-top:1em;">Descuentos (solo si aplican)</h3>
+            <div class="grid3">
+              <div class="field"><label>Préstamo interno (COP)</label><input id="liq-prestamo" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+              <div class="field"><label>Salud (COP)</label><input id="liq-salud" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+              <div class="field"><label>Pensión (COP)</label><input id="liq-pension" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+            </div>
+            <div class="field" style="max-width:260px;"><label>Otros descuentos (COP)</label><input id="liq-otros" type="number" min="0" value="0" onchange="calcularLiquidacion()"></div>
+
+            <div class="stat" style="margin-top:1em;">
+              <div class="box"><div class="num" id="liq-total-devengado">$0</div><div class="lbl">Total devengado</div></div>
+              <div class="box"><div class="num" id="liq-total-descuentos">$0</div><div class="lbl">Total descuentos</div></div>
+              <div class="box"><div class="num" id="liq-total-pagar">$0</div><div class="lbl">Total a pagar</div></div>
+            </div>
+            <button class="primary" onclick="guardarLiquidacion()">Guardar liquidación</button>
+          </div>
+
+          <div class="card">
+            <div class="toolbar">
+              <h3 style="margin:0;">Liquidaciones del mes</h3>
+              <div style="display:flex;gap:.5em;align-items:end;flex-wrap:wrap;">
+                <div><label style="margin-bottom:.2em;">Mes</label><input type="month" id="liq-mes-filtro" onchange="renderLiquidaciones()"></div>
+                <button class="ghost small" onclick="descargarLiquidacionesPDF()">Descargar PDF del mes</button>
+                <button class="ghost small" onclick="descargarLiquidacionesExcel()">Descargar Excel del mes</button>
+              </div>
+            </div>
+            <div id="tabla-liquidaciones"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BALANCES (solo súper administrador) -->
+      <section class="view" id="view-balances">
+        <h2>Balances</h2>
+        <div class="card">
+          <div class="toolbar">
+            <div style="display:flex;gap:.6em;flex-wrap:wrap;align-items:end;">
+              <div><label style="margin-bottom:.2em;">Ver por</label>
+                <select id="bal-tipo-filtro" onchange="cambiarTipoFiltroBalance()">
+                  <option value="dia">Día</option><option value="mes">Mes</option><option value="anio">Año</option>
+                </select>
+              </div>
+              <div id="bal-filtro-dia-wrap"><label style="margin-bottom:.2em;">Fecha</label><input type="date" id="bal-filtro-dia" onchange="renderBalances()"></div>
+              <div id="bal-filtro-mes-wrap" style="display:none;"><label style="margin-bottom:.2em;">Mes</label><input type="month" id="bal-filtro-mes" onchange="renderBalances()"></div>
+              <div id="bal-filtro-anio-wrap" style="display:none;"><label style="margin-bottom:.2em;">Año</label><input type="number" id="bal-filtro-anio" min="2020" onchange="renderBalances()"></div>
+            </div>
+            <div>
+              <button class="ghost small" onclick="descargarBalanceExcel()">Descargar Excel</button>
+              <button class="ghost small" onclick="descargarBalancePDF()">Descargar PDF</button>
+            </div>
+          </div>
+          <div class="stat">
+            <div class="box"><div class="num" id="bal-pedidos">0</div><div class="lbl">Pedidos del periodo</div></div>
+            <div class="box"><div class="num" id="bal-bolsas">0</div><div class="lbl">Bolsas vendidas</div></div>
+            <div class="box"><div class="num" id="bal-ventas">$0</div><div class="lbl">Valor total vendido</div></div>
+            <div class="box"><div class="num" id="bal-ingresos">$0</div><div class="lbl">Ingresos recibidos</div></div>
+            <div class="box"><div class="num" id="bal-egresos">$0</div><div class="lbl">Egresos</div></div>
+            <div class="box"><div class="num" id="bal-neto">$0</div><div class="lbl">Balance neto</div></div>
+          </div>
+          <div class="stat">
+            <div class="box"><div class="num" id="bal-entregas-ok">0</div><div class="lbl">Entregas exitosas</div></div>
+            <div class="box"><div class="num" id="bal-entregas-novedad">0</div><div class="lbl">Novedades de entrega</div></div>
+            <div class="box"><div class="num" id="bal-clientes-nuevos">0</div><div class="lbl">Clientes nuevos en el periodo</div></div>
+            <div class="box"><div class="num" id="bal-clientes-activos">0</div><div class="lbl">Clientes con pedidos en el periodo</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Ventas por día</h3>
+          <canvas id="bal-grafico" height="90"></canvas>
+        </div>
+        <div class="card">
+          <h3>Detalle de movimientos del periodo</h3>
+          <div id="tabla-balance-detalle"></div>
         </div>
       </section>
 
@@ -478,6 +677,73 @@
   </div>
 </div>
 
+<!-- ============ MODAL: editar usuario ============ -->
+<div class="modal-overlay" id="modal-editar-usuario">
+  <div class="modal">
+    <h3>Editar usuario</h3>
+    <input type="hidden" id="eu-id">
+    <div class="field"><label>Nombre completo</label><input id="eu-nombre"></div>
+    <div class="field"><label>Usuario (login)</label><input id="eu-usuario"></div>
+    <div class="field"><label>Nueva contraseña (déjalo vacío para no cambiarla)</label><input id="eu-pass" type="text"></div>
+    <div class="field"><label>Rol</label>
+      <select id="eu-rol">
+        <option value="admin">Administrador</option>
+        <option value="operario">Operario de producción</option>
+        <option value="domiciliario">Domiciliario / repartidor</option>
+        <option value="superadmin">Súper administrador</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="cerrarModal('modal-editar-usuario')">Cancelar</button>
+      <button class="primary" onclick="guardarEdicionUsuario()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: registrar egreso ============ -->
+<div class="modal-overlay" id="modal-egreso">
+  <div class="modal">
+    <h3>Registrar egreso</h3>
+    <div class="field"><label>Tipo de egreso</label>
+      <select id="eg-tipo">
+        <option value="Compra de materia prima">Compra de materia prima</option>
+        <option value="Pago a proveedor">Pago a proveedor</option>
+        <option value="Nómina">Nómina</option>
+        <option value="Transporte / domicilios">Transporte / domicilios</option>
+        <option value="Servicios públicos">Servicios públicos</option>
+        <option value="Arriendo">Arriendo</option>
+        <option value="Mantenimiento">Mantenimiento</option>
+        <option value="Otro">Otro</option>
+      </select>
+    </div>
+    <div class="field"><label>Valor del egreso (COP)</label><input id="eg-valor" type="number" min="0"></div>
+    <div class="field"><label>Método de pago</label>
+      <select id="eg-metodo" onchange="toggleEgresoProveedor()">
+        <option value="efectivo">Efectivo</option>
+        <option value="transferencia">Transferencia</option>
+      </select>
+    </div>
+    <div class="field"><label>¿La salida es a un proveedor registrado?</label>
+      <select id="eg-es-proveedor" onchange="toggleEgresoProveedor()">
+        <option value="no">No, es a un tercero</option>
+        <option value="si">Sí, elegir proveedor</option>
+      </select>
+    </div>
+    <div id="eg-proveedor-wrap" style="display:none;">
+      <div class="field"><label>Proveedor</label><select id="eg-proveedor-id"></select></div>
+    </div>
+    <div id="eg-tercero-wrap">
+      <div class="field"><label>Nombre de quien recibe el pago</label><input id="eg-tercero-nombre"></div>
+      <div class="field"><label>Documento (Cédula / RUT)</label><input id="eg-tercero-documento"></div>
+    </div>
+    <div class="field"><label>Descripción / concepto</label><textarea id="eg-descripcion" rows="2"></textarea></div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="cerrarModal('modal-egreso')">Cancelar</button>
+      <button class="primary" onclick="guardarEgreso()">Guardar egreso</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: editar pedido (solo súper admin) ============ -->
 <div class="modal-overlay" id="modal-editar-superadmin">
   <div class="modal">
@@ -551,10 +817,12 @@ function nowTimeLabel(){ return new Date().toLocaleTimeString('es-CO'); }
 
 const ROLE_LABEL = { superadmin:'Súper administrador', admin:'Administrador', operario:'Operario de producción', domiciliario:'Domiciliario' };
 const ESTADO_LABEL = { programado:'Programado', en_ruta:'En ruta', entregado:'Entregado', no_entregado:'No entregado' };
-const PAGO_LABEL = { efectivo:'Efectivo', transferencia:'Transferencia', credito:'Crédito' };
+const PAGO_LABEL = { efectivo:'Efectivo', transferencia:'Transferencia', credito:'Crédito', cartera14:'Cartera 14' };
 
 let currentUser = null;
-let cache = { usuarios:[], pedidos:[], produccion:[], clientes:[], historial:[], cajas:[], precioEstandar:0, stockMinimo:0 };
+let cache = { usuarios:[], pedidos:[], produccion:[], clientes:[], historial:[], cajas:[], precioEstandar:0, stockMinimo:0,
+  egresos:[], proveedores:[], empleados:[], liquidaciones:[] };
+let balanceChartInstance = null;
 let clienteModalOnSaved = null;
 let firmaCtx = null, firmaDibujando = false, firmaTieneTrazo = false;
 
@@ -603,11 +871,12 @@ const NAV_BY_ROLE = {
   superadmin: [
     {group:'Pedidos', items:[['pedido-nuevo','+ Nuevo pedido', 'nav-cta'],['pedido-ver','Ver pedidos']]},
     ['entregas','Mis entregas'], ['produccion','Producción'], ['inventario','Inventario'],
-    ['tesoreria','Tesorería'], ['clientes','Clientes'], ['usuarios','Usuarios'], ['historial','Historial']
+    ['tesoreria','Tesorería'], ['clientes','Clientes'], ['proveedores','Proveedores'],
+    ['nomina','Nómina'], ['balances','Balances'], ['usuarios','Usuarios'], ['historial','Historial']
   ],
   admin: [
     {group:'Pedidos', items:[['pedido-nuevo','+ Nuevo pedido', 'nav-cta'],['pedido-ver','Ver pedidos']]},
-    ['produccion','Producción'], ['inventario','Inventario'], ['clientes','Clientes']
+    ['produccion','Producción'], ['inventario','Inventario'], ['clientes','Clientes'], ['proveedores','Proveedores']
   ],
   operario: [ ['produccion','Producción'] ],
   domiciliario: [ ['entregas','Mis entregas'] ]
@@ -687,6 +956,22 @@ function cargarTodo(){
   db.collection('cajas').orderBy('fecha','desc').limit(60).onSnapshot(snap=>{
     cache.cajas = snap.docs.map(d=>({id:d.id, ...d.data()}));
     renderTesoreria();
+  });
+  db.collection('egresos').orderBy('fechaISO','desc').limit(500).onSnapshot(snap=>{
+    cache.egresos = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderEgresos(); renderTesoreria(); renderPagosProveedores();
+  });
+  db.collection('proveedores').orderBy('nombre').onSnapshot(snap=>{
+    cache.proveedores = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderProveedores(); renderSelectProveedores(); renderPagosProveedores();
+  });
+  db.collection('empleados').orderBy('nombre').onSnapshot(snap=>{
+    cache.empleados = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderEmpleados(); renderSelectEmpleadosLiquidacion();
+  });
+  db.collection('liquidaciones').orderBy('creadoEnLabel','desc').limit(500).onSnapshot(snap=>{
+    cache.liquidaciones = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderLiquidaciones();
   });
   db.collection('config').doc('precios').onSnapshot(doc=>{
     const data = doc.exists ? doc.data() : {};
@@ -883,8 +1168,34 @@ function renderUsuarios(){
   if(!cache.usuarios.length){ el.innerHTML = '<p class="empty">Aún no hay usuarios creados.</p>'; return; }
   el.innerHTML = `<table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th></th></tr></thead><tbody>
     ${cache.usuarios.map(u=>`<tr><td>${u.nombre}</td><td>${u.usuario}</td><td>${ROLE_LABEL[u.rol]||u.rol}</td>
-      <td><button class="ghost small" onclick="eliminarUsuario('${u.id}','${u.nombre.replace(/'/g,"")}')">Eliminar</button></td></tr>`).join('')}
+      <td><button class="ghost small" onclick="abrirEditarUsuario('${u.id}')">Editar</button> <button class="danger small" onclick="eliminarUsuario('${u.id}','${u.nombre.replace(/'/g,"")}')">Eliminar</button></td></tr>`).join('')}
   </tbody></table>`;
+}
+function abrirEditarUsuario(id){
+  const u = cache.usuarios.find(x=>x.id===id);
+  if(!u){ toast('Ese usuario ya no existe.'); return; }
+  document.getElementById('eu-id').value = u.id;
+  document.getElementById('eu-nombre').value = u.nombre;
+  document.getElementById('eu-usuario').value = u.usuario;
+  document.getElementById('eu-pass').value = '';
+  document.getElementById('eu-rol').value = u.rol;
+  abrirModal('modal-editar-usuario');
+}
+async function guardarEdicionUsuario(){
+  const id = document.getElementById('eu-id').value;
+  const nombre = document.getElementById('eu-nombre').value.trim();
+  const usuario = document.getElementById('eu-usuario').value.trim();
+  const nuevaPass = document.getElementById('eu-pass').value;
+  const rol = document.getElementById('eu-rol').value;
+  if(!nombre || !usuario){ toast('Nombre y usuario son obligatorios.'); return; }
+  const otroConMismoUsuario = cache.usuarios.find(u=>u.usuario===usuario && u.id!==id);
+  if(otroConMismoUsuario){ toast('Ya existe otro usuario con ese nombre de login.'); return; }
+  const update = { nombre, usuario, rol };
+  if(nuevaPass){ update.passwordHash = await sha256(nuevaPass); }
+  await db.collection('usuarios').doc(id).update(update);
+  await registrarHistorial('Usuario editado', `${nombre} (${ROLE_LABEL[rol]}) — usuario "${usuario}"${nuevaPass?' · contraseña cambiada':''}`);
+  toast('Usuario actualizado.');
+  cerrarModal('modal-editar-usuario');
 }
 
 /* ============ PRECIO / STOCK Y PEDIDOS ============ */
@@ -945,12 +1256,13 @@ async function crearPedido(){
   const cliente = cache.clientes.find(c=>c.id===clienteId);
   const valorTotal = cantidad * valorBolsa;
   const asignadoUsuario = cache.usuarios.find(u=>u.id===asignadoA);
+  const facturarElectronico = document.getElementById('np-facturar').checked;
 
   const ref = await db.collection('pedidos').add({
     numeroOrdenCompra,
     clienteId, clienteNombre: cliente.nombreRazonSocial, clienteDocumento: `${cliente.tipoDocumento} ${cliente.numeroDocumento}`,
     clienteTelefono: cliente.telefono || '', direccion, cantidad, valorBolsa, valorTotal,
-    formaPago, numCuotas, abonos: [],
+    formaPago, numCuotas, abonos: [], facturado14: false, facturarElectronico,
     estado: asignadoA ? 'en_ruta' : 'programado', fechaProgramada,
     asignadoA: asignadoA || null, asignadoNombre: asignadoUsuario ? asignadoUsuario.nombre : null,
     creadoPor: currentUser.nombre, creadoEnLabel: nowLabel(),
@@ -964,6 +1276,7 @@ async function crearPedido(){
   document.getElementById('np-cliente-doc').value='';
   document.getElementById('np-cliente-id').value='';
   document.getElementById('np-cliente-info').style.display='none';
+  document.getElementById('np-facturar').checked = false;
   aplicarPrecioAlFormulario();
 }
 function saldoPendiente(p){
@@ -1043,11 +1356,11 @@ function filaPedidoHTML(p){
     <td><b>${p.numeroOrdenCompra || '—'}</b></td>
     <td>${p.cantidad}</td>
     <td>${fmtCOP(p.valorTotal)}</td>
-    <td><span class="badge ${p.formaPago}">${PAGO_LABEL[p.formaPago]}${p.formaPago==='credito'?' · '+p.numCuotas+' cuotas':''}</span></td>
+    <td><span class="badge ${p.formaPago}">${PAGO_LABEL[p.formaPago]}${p.formaPago==='credito'?' · '+p.numCuotas+' cuotas':''}</span>${p.facturarElectronico?'<br><span style="font-size:.7rem;color:var(--navy);">🧾 Por facturar (DIAN)</span>':''}</td>
     <td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span>${p.novedadMotivo?`<br><span style="font-size:.72rem;color:var(--clay);">${p.novedadMotivo}</span>`:''}</td>
     <td>${p.asignadoNombre || '<span style="color:var(--ink-soft)">Sin asignar</span>'}</td>
     <td>${p.entregadoPor || '—'}</td>
-    <td>${p.formaPago==='credito' ? fmtCOP(saldo) : '—'}</td>
+    <td>${p.formaPago==='credito' ? fmtCOP(saldo) : (p.formaPago==='cartera14' ? (p.facturado14 ? 'Cobrado' : fmtCOP(saldo)) : '—')}</td>
     <td style="font-size:.78rem;">${p.creadoPor}<br>${p.creadoEnLabel||''}</td>
     <td style="white-space:nowrap;">
       <button class="ghost small" onclick="descargarPedidoPDF('${p.id}')">PDF</button>
@@ -1162,6 +1475,7 @@ async function descargarPedidoPDF(pedidoId){
   doc.text(`Estado: ${ESTADO_LABEL[p.estado]||p.estado||'—'}`, 14, y); y+=6;
   doc.text(`Fecha programada: ${p.fechaProgramada||'—'}`, 14, y); y+=6;
   doc.text(`Repartidor asignado: ${p.asignadoNombre||'—'}`, 14, y); y+=6;
+  if(p.facturarElectronico){ doc.text(`Facturación electrónica: Pendiente de generar en Siigo`, 14, y); y+=6; }
   if(p.estado==='entregado' && p.receptorNombre){
     doc.text(`Recibido por: ${p.receptorNombre} (Doc. ${p.receptorDocumento||'—'})`, 14, y); y+=6;
     if(p.firmaDataUrl){
@@ -1507,6 +1821,11 @@ function renderTesoreria(){
   const ventasMes = cache.pedidos.filter(p=>p.fechaProgramada && p.fechaProgramada.startsWith(mes)).reduce((s,p)=>s+p.valorTotal,0);
   document.getElementById('teso-ventas-mes').textContent = fmtCOP(ventasMes);
 
+  const egresosHoy = egresosEfectivoDelDia(hoy) + cache.egresos.filter(e=>e.fechaISO===hoy && e.metodo==='transferencia').reduce((s,e)=>s+e.valor,0);
+  document.getElementById('teso-egresos-hoy').textContent = fmtCOP(egresosHoy);
+  renderEgresos();
+  renderCartera14();
+
   const pendientesHoy = cache.pedidos.filter(p=>p.fechaProgramada===hoy && ['programado','en_ruta'].includes(p.estado));
   const pendBox = document.getElementById('teso-pedidos-pendientes-hoy');
   pendBox.innerHTML = pendientesHoy.length
@@ -1556,10 +1875,12 @@ function renderCajaTab(){
     return;
   }
   const efectivoHoy = todosLosAbonos().filter(a=>a.fechaISO===hoy && a.metodo==='efectivo').reduce((s,a)=>s+a.monto,0);
-  const esperado = cajaHoy.baseInicial + efectivoHoy;
+  const egresosEfectivoHoy = egresosEfectivoDelDia(hoy);
+  const esperado = cajaHoy.baseInicial + efectivoHoy - egresosEfectivoHoy;
   cont.innerHTML = `<h3>Caja de hoy <span class="badge abierta">Abierta</span></h3>
     <p>Base inicial: ${fmtCOP(cajaHoy.baseInicial)} (abierta por ${cajaHoy.abiertoPor})</p>
-    <p>Efectivo recibido hoy: ${fmtCOP(efectivoHoy)} · <b>Total esperado en caja: ${fmtCOP(esperado)}</b></p>
+    <p>Efectivo recibido hoy: ${fmtCOP(efectivoHoy)} · Egresos en efectivo hoy: <span style="color:var(--clay);">-${fmtCOP(egresosEfectivoHoy)}</span></p>
+    <p><b>Total esperado en caja: ${fmtCOP(esperado)}</b></p>
     <div class="field" style="max-width:220px;"><label>Efectivo contado al cierre</label><input id="caja-contado" type="number" min="0"></div>
     <button class="danger" onclick="cerrarCaja()">Cerrar caja</button>`;
 }
@@ -1593,7 +1914,8 @@ async function cerrarCaja(){
   const contado = parseFloat(document.getElementById('caja-contado').value);
   if(isNaN(contado)){ toast('Ingresa el efectivo contado.'); return; }
   const efectivoHoy = todosLosAbonos().filter(a=>a.fechaISO===fecha && a.metodo==='efectivo').reduce((s,a)=>s+a.monto,0);
-  const esperado = cajaHoy.baseInicial + efectivoHoy;
+  const egresosEfectivoHoy = egresosEfectivoDelDia(fecha);
+  const esperado = cajaHoy.baseInicial + efectivoHoy - egresosEfectivoHoy;
   const diferencia = contado - esperado;
   await db.collection('cajas').doc(fecha).update({
     cerrada:true, efectivoContado: contado, efectivoEsperado: esperado, diferencia,
@@ -1642,6 +1964,529 @@ function descargarHistorialExcel(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Historial');
   XLSX.writeFile(wb, `historial_masicolpos_${hoyISO()}.xlsx`);
+}
+
+/* ============ EGRESOS (solo súper administrador) ============ */
+function toggleEgresoProveedor(){
+  const esProveedor = document.getElementById('eg-es-proveedor').value === 'si';
+  document.getElementById('eg-proveedor-wrap').style.display = esProveedor ? 'block' : 'none';
+  document.getElementById('eg-tercero-wrap').style.display = esProveedor ? 'none' : 'block';
+}
+function abrirModalEgreso(){
+  document.getElementById('eg-tipo').value = 'Compra de materia prima';
+  document.getElementById('eg-valor').value = '';
+  document.getElementById('eg-metodo').value = 'efectivo';
+  document.getElementById('eg-es-proveedor').value = 'no';
+  document.getElementById('eg-tercero-nombre').value = '';
+  document.getElementById('eg-tercero-documento').value = '';
+  document.getElementById('eg-descripcion').value = '';
+  toggleEgresoProveedor();
+  abrirModal('modal-egreso');
+}
+async function guardarEgreso(){
+  const tipo = document.getElementById('eg-tipo').value;
+  const valor = parseFloat(document.getElementById('eg-valor').value);
+  const metodo = document.getElementById('eg-metodo').value;
+  const esProveedor = document.getElementById('eg-es-proveedor').value === 'si';
+  const descripcion = document.getElementById('eg-descripcion').value.trim();
+  if(!valor || valor<=0){ toast('Ingresa un valor válido.'); return; }
+
+  const data = {
+    tipo, valor, metodo, descripcion,
+    fecha: nowLabel(), fechaISO: hoyISO(),
+    registradoPor: currentUser.nombre
+  };
+  if(esProveedor){
+    const provId = document.getElementById('eg-proveedor-id').value;
+    const prov = cache.proveedores.find(p=>p.id===provId);
+    if(!prov){ toast('Selecciona un proveedor.'); return; }
+    data.proveedorId = provId;
+    data.beneficiarioNombre = prov.nombre;
+    data.beneficiarioDocumento = `${prov.tipoDocumento} ${prov.numeroDocumento}`;
+  } else {
+    const nombre = document.getElementById('eg-tercero-nombre').value.trim();
+    const documento = document.getElementById('eg-tercero-documento').value.trim();
+    if(!nombre || !documento){ toast('Ingresa nombre y documento de quien recibe el pago.'); return; }
+    data.beneficiarioNombre = nombre;
+    data.beneficiarioDocumento = documento;
+  }
+  await db.collection('egresos').add(data);
+  await registrarHistorial('Egreso registrado', `${tipo} — ${fmtCOP(valor)} (${metodo}) a ${data.beneficiarioNombre}`);
+  toast('Egreso registrado.');
+  cerrarModal('modal-egreso');
+}
+function renderEgresos(){
+  const el = document.getElementById('tabla-egresos');
+  if(!el) return;
+  const fechaInput = document.getElementById('eg-filtro-fecha');
+  if(fechaInput && !fechaInput.value) fechaInput.value = hoyISO();
+  const fechaFiltro = fechaInput ? fechaInput.value : hoyISO();
+  const delDia = cache.egresos.filter(e=>e.fechaISO===fechaFiltro);
+  const totalDia = delDia.reduce((s,e)=>s+e.valor,0);
+  const totalBox = document.getElementById('eg-total-dia');
+  if(totalBox) totalBox.textContent = fmtCOP(totalDia);
+  el.innerHTML = delDia.length
+    ? `<table><thead><tr><th>Hora</th><th>Tipo</th><th>Beneficiario</th><th>Método</th><th>Valor</th><th>Registrado por</th></tr></thead><tbody>
+        ${delDia.map(e=>`<tr><td>${e.fecha}</td><td>${e.tipo}</td><td>${e.beneficiarioNombre}<br><span style="font-size:.72rem;color:var(--ink-soft);">${e.beneficiarioDocumento||''}</span></td>
+          <td><span class="badge ${e.metodo}">${e.metodo==='efectivo'?'Efectivo':'Transferencia'}</span></td><td>${fmtCOP(e.valor)}</td><td>${e.registradoPor}</td></tr>`).join('')}
+      </tbody></table>`
+    : '<p class="empty">No hay egresos registrados en esta fecha.</p>';
+}
+function egresosEfectivoDelDia(fechaISOStr){
+  return cache.egresos.filter(e=>e.fechaISO===fechaISOStr && e.metodo==='efectivo').reduce((s,e)=>s+e.valor,0);
+}
+
+/* ============ PROVEEDORES ============ */
+function limpiarFormProveedor(){
+  document.getElementById('prov-edit-id').value = '';
+  document.getElementById('prov-form-titulo').textContent = 'Registrar proveedor';
+  ['prov-numdoc','prov-nombre','prov-telefono','prov-ciudad','prov-tipo','prov-direccion','prov-actividad'].forEach(id=>document.getElementById(id).value='');
+}
+function leerCamposProveedor(){
+  return {
+    tipoPersona: document.getElementById('prov-tipopersona').value,
+    tipoDocumento: document.getElementById('prov-tipodoc').value,
+    numeroDocumento: document.getElementById('prov-numdoc').value.trim(),
+    nombre: document.getElementById('prov-nombre').value.trim(),
+    telefono: document.getElementById('prov-telefono').value.trim(),
+    ciudad: document.getElementById('prov-ciudad').value.trim(),
+    tipoProveedor: document.getElementById('prov-tipo').value.trim(),
+    direccion: document.getElementById('prov-direccion').value.trim(),
+    actividadEconomica: document.getElementById('prov-actividad').value.trim()
+  };
+}
+async function guardarProveedorForm(){
+  const data = leerCamposProveedor();
+  if(!data.numeroDocumento || !data.nombre){ toast('Documento y nombre son obligatorios.'); return; }
+  const editId = document.getElementById('prov-edit-id').value;
+  if(editId){
+    await db.collection('proveedores').doc(editId).update(data);
+    await registrarHistorial('Proveedor editado', data.nombre);
+  } else {
+    await db.collection('proveedores').add({...data, creadoEn: firebase.firestore.FieldValue.serverTimestamp()});
+    await registrarHistorial('Proveedor creado', data.nombre);
+  }
+  toast('Proveedor guardado.');
+  limpiarFormProveedor();
+}
+function editarProveedorEnVista(id){
+  const p = cache.proveedores.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('prov-edit-id').value = id;
+  document.getElementById('prov-form-titulo').textContent = 'Editando: ' + p.nombre;
+  document.getElementById('prov-tipopersona').value = p.tipoPersona;
+  document.getElementById('prov-tipodoc').value = p.tipoDocumento;
+  document.getElementById('prov-numdoc').value = p.numeroDocumento;
+  document.getElementById('prov-nombre').value = p.nombre;
+  document.getElementById('prov-telefono').value = p.telefono||'';
+  document.getElementById('prov-ciudad').value = p.ciudad||'';
+  document.getElementById('prov-tipo').value = p.tipoProveedor||'';
+  document.getElementById('prov-direccion').value = p.direccion||'';
+  document.getElementById('prov-actividad').value = p.actividadEconomica||'';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function renderProveedores(){
+  const el = document.getElementById('tabla-proveedores');
+  if(!el) return;
+  if(!cache.proveedores.length){ el.innerHTML = '<p class="empty">Aún no hay proveedores registrados.</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Nombre</th><th>Documento</th><th>Producto/servicio</th><th>Ciudad</th><th>Teléfono</th><th></th></tr></thead><tbody>
+    ${cache.proveedores.map(p=>`<tr><td>${p.nombre}<br><span style="font-size:.76rem;color:var(--ink-soft);">${p.tipoPersona==='juridica'?'Persona jurídica':'Persona natural'}</span></td>
+      <td>${p.tipoDocumento} ${p.numeroDocumento}</td><td>${p.tipoProveedor||'—'}</td><td>${p.ciudad||'—'}</td><td>${p.telefono||'—'}</td>
+      <td><button class="ghost small" onclick="editarProveedorEnVista('${p.id}')">Editar</button></td></tr>`).join('')}
+  </tbody></table>`;
+}
+function renderSelectProveedores(){
+  const sel = document.getElementById('eg-proveedor-id');
+  if(!sel) return;
+  sel.innerHTML = cache.proveedores.map(p=>`<option value="${p.id}">${p.nombre} — ${p.numeroDocumento}</option>`).join('') || '<option value="">Sin proveedores registrados</option>';
+}
+function renderPagosProveedores(){
+  const el = document.getElementById('tabla-pagos-proveedores');
+  if(!el) return;
+  const pagos = cache.egresos.filter(e=>e.proveedorId);
+  if(!pagos.length){ el.innerHTML = '<p class="empty">Aún no se han registrado pagos a proveedores.</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Concepto</th><th>Método</th><th>Valor</th></tr></thead><tbody>
+    ${pagos.map(e=>`<tr><td>${e.fecha}</td><td>${e.beneficiarioNombre}</td><td>${e.tipo}${e.descripcion?' — '+e.descripcion:''}</td><td><span class="badge ${e.metodo}">${e.metodo==='efectivo'?'Efectivo':'Transferencia'}</span></td><td>${fmtCOP(e.valor)}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+function descargarProveedoresExcel(){
+  if(!cache.proveedores.length){ toast('No hay proveedores para exportar.'); return; }
+  const filas = cache.proveedores.map(p=>({
+    Nombre: p.nombre, 'Tipo de persona': p.tipoPersona==='juridica'?'Jurídica':'Natural', 'Tipo documento': p.tipoDocumento,
+    'Número documento': p.numeroDocumento, Teléfono: p.telefono, Dirección: p.direccion, Ciudad: p.ciudad,
+    'Producto/servicio': p.tipoProveedor, 'Actividad económica': p.actividadEconomica
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Proveedores');
+  XLSX.writeFile(wb, `proveedores_masicolpos_${hoyISO()}.xlsx`);
+}
+
+/* ============ NÓMINA: EMPLEADOS ============ */
+function mostrarNominaTab(tab, btn){
+  document.querySelectorAll('#view-nomina .subtab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('nomina-'+tab).classList.add('active');
+  document.querySelectorAll('#nomina-tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function calcularEdadEmpleado(){
+  const fn = document.getElementById('emp-fechanacimiento').value;
+  if(!fn){ document.getElementById('emp-edad').value = ''; return; }
+  const hoy = new Date(); const nacimiento = new Date(fn);
+  let edad = hoy.getFullYear() - nacimiento.getFullYear();
+  const m = hoy.getMonth() - nacimiento.getMonth();
+  if(m < 0 || (m===0 && hoy.getDate() < nacimiento.getDate())) edad--;
+  document.getElementById('emp-edad').value = edad;
+}
+function limpiarFormEmpleado(){
+  document.getElementById('emp-edit-id').value = '';
+  document.getElementById('emp-form-titulo').textContent = 'Registrar empleado';
+  ['emp-nombre','emp-apellidos','emp-documento','emp-fechanacimiento','emp-edad','emp-cargo','emp-celular','emp-correo','emp-arl','emp-eps','emp-pension','emp-cesantias','emp-salario'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('emp-activo').value = 'true';
+}
+function leerCamposEmpleado(){
+  return {
+    nombre: document.getElementById('emp-nombre').value.trim(),
+    apellidos: document.getElementById('emp-apellidos').value.trim(),
+    documento: document.getElementById('emp-documento').value.trim(),
+    fechaNacimiento: document.getElementById('emp-fechanacimiento').value,
+    edad: parseInt(document.getElementById('emp-edad').value) || null,
+    cargo: document.getElementById('emp-cargo').value.trim(),
+    celular: document.getElementById('emp-celular').value.trim(),
+    correo: document.getElementById('emp-correo').value.trim(),
+    arl: document.getElementById('emp-arl').value.trim(),
+    eps: document.getElementById('emp-eps').value.trim(),
+    fondoPension: document.getElementById('emp-pension').value.trim(),
+    fondoCesantias: document.getElementById('emp-cesantias').value.trim(),
+    salarioBase: parseFloat(document.getElementById('emp-salario').value) || 0,
+    activo: document.getElementById('emp-activo').value === 'true'
+  };
+}
+async function guardarEmpleadoForm(){
+  const data = leerCamposEmpleado();
+  if(!data.nombre || !data.apellidos || !data.documento || !data.salarioBase){ toast('Nombre, apellidos, documento y salario base son obligatorios.'); return; }
+  const editId = document.getElementById('emp-edit-id').value;
+  if(editId){
+    await db.collection('empleados').doc(editId).update(data);
+    await registrarHistorial('Empleado editado', `${data.nombre} ${data.apellidos}`);
+  } else {
+    await db.collection('empleados').add({...data, creadoEn: firebase.firestore.FieldValue.serverTimestamp()});
+    await registrarHistorial('Empleado creado', `${data.nombre} ${data.apellidos}`);
+  }
+  toast('Empleado guardado.');
+  limpiarFormEmpleado();
+}
+function editarEmpleadoEnVista(id){
+  const e = cache.empleados.find(x=>x.id===id);
+  if(!e) return;
+  document.getElementById('emp-edit-id').value = id;
+  document.getElementById('emp-form-titulo').textContent = 'Editando: ' + e.nombre + ' ' + e.apellidos;
+  document.getElementById('emp-nombre').value = e.nombre;
+  document.getElementById('emp-apellidos').value = e.apellidos;
+  document.getElementById('emp-documento').value = e.documento;
+  document.getElementById('emp-fechanacimiento').value = e.fechaNacimiento||'';
+  document.getElementById('emp-edad').value = e.edad||'';
+  document.getElementById('emp-cargo').value = e.cargo||'';
+  document.getElementById('emp-celular').value = e.celular||'';
+  document.getElementById('emp-correo').value = e.correo||'';
+  document.getElementById('emp-arl').value = e.arl||'';
+  document.getElementById('emp-eps').value = e.eps||'';
+  document.getElementById('emp-pension').value = e.fondoPension||'';
+  document.getElementById('emp-cesantias').value = e.fondoCesantias||'';
+  document.getElementById('emp-salario').value = e.salarioBase;
+  document.getElementById('emp-activo').value = e.activo ? 'true':'false';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function renderEmpleados(){
+  const el = document.getElementById('tabla-empleados');
+  if(!el) return;
+  if(!cache.empleados.length){ el.innerHTML = '<p class="empty">Aún no hay empleados registrados.</p>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Nombre</th><th>Documento</th><th>Cargo</th><th>Salario base</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${cache.empleados.map(e=>`<tr><td>${e.nombre} ${e.apellidos}</td><td>${e.documento}</td><td>${e.cargo||'—'}</td><td>${fmtCOP(e.salarioBase)}</td>
+      <td><span class="badge ${e.activo?'entregado':'no_entregado'}">${e.activo?'Activo':'Inactivo'}</span></td>
+      <td><button class="ghost small" onclick="editarEmpleadoEnVista('${e.id}')">Editar</button></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+/* ============ NÓMINA: LIQUIDACIÓN ============ */
+function renderSelectEmpleadosLiquidacion(){
+  const sel = document.getElementById('liq-empleado');
+  if(!sel) return;
+  const activos = cache.empleados.filter(e=>e.activo);
+  sel.innerHTML = '<option value="">Selecciona un empleado</option>' + activos.map(e=>`<option value="${e.id}">${e.nombre} ${e.apellidos}</option>`).join('');
+}
+function diasDelMes(mesISOStr){
+  if(!mesISOStr) return 30;
+  const [anio, mes] = mesISOStr.split('-').map(Number);
+  return new Date(anio, mes, 0).getDate();
+}
+function onSelectEmpleadoLiquidacion(){
+  const id = document.getElementById('liq-empleado').value;
+  const e = cache.empleados.find(x=>x.id===id);
+  document.getElementById('liq-salario').value = e ? e.salarioBase : '';
+  if(!document.getElementById('liq-mes').value) document.getElementById('liq-mes').value = mesISO();
+  if(!document.getElementById('liq-dias').value) document.getElementById('liq-dias').value = diasDelMes(document.getElementById('liq-mes').value);
+  calcularLiquidacion();
+}
+function calcularLiquidacion(){
+  const salarioBase = parseFloat(document.getElementById('liq-salario').value) || 0;
+  const comisiones = parseFloat(document.getElementById('liq-comisiones').value) || 0;
+  const horasExtra = parseFloat(document.getElementById('liq-horasextra').value) || 0;
+  const auxTransporte = parseFloat(document.getElementById('liq-auxtransporte').value) || 0;
+  const diasTrabajados = parseFloat(document.getElementById('liq-dias').value) || 0;
+  const mes = document.getElementById('liq-mes').value;
+  const totalDiasMes = diasDelMes(mes);
+
+  const salarioProporcional = totalDiasMes>0 ? (salarioBase/totalDiasMes)*diasTrabajados : 0;
+  const totalDevengado = salarioProporcional + comisiones + horasExtra + auxTransporte;
+
+  const prestamo = parseFloat(document.getElementById('liq-prestamo').value) || 0;
+  const salud = parseFloat(document.getElementById('liq-salud').value) || 0;
+  const pension = parseFloat(document.getElementById('liq-pension').value) || 0;
+  const otros = parseFloat(document.getElementById('liq-otros').value) || 0;
+  const totalDescuentos = prestamo + salud + pension + otros;
+
+  const totalPagar = totalDevengado - totalDescuentos;
+
+  document.getElementById('liq-total-devengado').textContent = fmtCOP(totalDevengado);
+  document.getElementById('liq-total-descuentos').textContent = fmtCOP(totalDescuentos);
+  document.getElementById('liq-total-pagar').textContent = fmtCOP(totalPagar);
+  return { salarioProporcional, totalDevengado, totalDescuentos, totalPagar };
+}
+async function guardarLiquidacion(){
+  const empleadoId = document.getElementById('liq-empleado').value;
+  const empleado = cache.empleados.find(e=>e.id===empleadoId);
+  if(!empleado){ toast('Selecciona un empleado.'); return; }
+  const mes = document.getElementById('liq-mes').value;
+  if(!mes){ toast('Selecciona el mes a liquidar.'); return; }
+  const calculo = calcularLiquidacion();
+  const data = {
+    empleadoId, empleadoNombre: `${empleado.nombre} ${empleado.apellidos}`, mes,
+    salarioBase: parseFloat(document.getElementById('liq-salario').value)||0,
+    comisiones: parseFloat(document.getElementById('liq-comisiones').value)||0,
+    horasExtra: parseFloat(document.getElementById('liq-horasextra').value)||0,
+    auxTransporte: parseFloat(document.getElementById('liq-auxtransporte').value)||0,
+    diasTrabajados: parseFloat(document.getElementById('liq-dias').value)||0,
+    prestamo: parseFloat(document.getElementById('liq-prestamo').value)||0,
+    salud: parseFloat(document.getElementById('liq-salud').value)||0,
+    pension: parseFloat(document.getElementById('liq-pension').value)||0,
+    otrosDescuentos: parseFloat(document.getElementById('liq-otros').value)||0,
+    totalDevengado: calculo.totalDevengado, totalDescuentos: calculo.totalDescuentos, totalPagar: calculo.totalPagar,
+    liquidadoPor: currentUser.nombre, creadoEnLabel: nowLabel(),
+    creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  await db.collection('liquidaciones').add(data);
+  await registrarHistorial('Liquidación de nómina generada', `${data.empleadoNombre} — ${mes} — ${fmtCOP(data.totalPagar)}`);
+  toast('Liquidación guardada.');
+}
+function renderLiquidaciones(){
+  const el = document.getElementById('tabla-liquidaciones');
+  if(!el) return;
+  const filtroInput = document.getElementById('liq-mes-filtro');
+  if(filtroInput && !filtroInput.value) filtroInput.value = mesISO();
+  const mesFiltro = filtroInput ? filtroInput.value : mesISO();
+  const delMes = cache.liquidaciones.filter(l=>l.mes===mesFiltro);
+  if(!delMes.length){ el.innerHTML = '<p class="empty">No hay liquidaciones generadas para este mes.</p>'; return; }
+  const totalMes = delMes.reduce((s,l)=>s+l.totalPagar,0);
+  el.innerHTML = `<table><thead><tr><th>Empleado</th><th>Días trabajados</th><th>Devengado</th><th>Descuentos</th><th>Total a pagar</th><th></th></tr></thead><tbody>
+    ${delMes.map(l=>`<tr><td>${l.empleadoNombre}</td><td>${l.diasTrabajados}</td><td>${fmtCOP(l.totalDevengado)}</td><td>${fmtCOP(l.totalDescuentos)}</td><td><b>${fmtCOP(l.totalPagar)}</b></td>
+      <td><button class="ghost small" onclick="descargarLiquidacionIndividualPDF('${l.id}')">PDF</button></td></tr>`).join('')}
+    <tr><td colspan="4" style="text-align:right;"><b>Total del mes</b></td><td colspan="2"><b>${fmtCOP(totalMes)}</b></td></tr>
+  </tbody></table>`;
+}
+function descargarLiquidacionIndividualPDF(liqId){
+  const l = cache.liquidaciones.find(x=>x.id===liqId);
+  if(!l){ toast('Liquidación no encontrada.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  let y = 20;
+  doc.setFontSize(16); doc.text('Masillas Colombia — Liquidación de nómina', 14, y); y+=10;
+  doc.setFontSize(11); doc.text(`Empleado: ${l.empleadoNombre}`, 14, y); y+=7;
+  doc.text(`Mes liquidado: ${l.mes}`, 14, y); y+=10;
+  doc.setFontSize(10);
+  doc.text(`Días trabajados: ${l.diasTrabajados}`, 14, y); y+=6;
+  doc.text(`Salario base: ${fmtCOP(l.salarioBase)}`, 14, y); y+=6;
+  doc.text(`Comisiones: ${fmtCOP(l.comisiones)}`, 14, y); y+=6;
+  doc.text(`Horas extra: ${fmtCOP(l.horasExtra)}`, 14, y); y+=6;
+  doc.text(`Auxilio de transporte: ${fmtCOP(l.auxTransporte)}`, 14, y); y+=8;
+  doc.text(`Total devengado: ${fmtCOP(l.totalDevengado)}`, 14, y); y+=8;
+  if(l.totalDescuentos>0){
+    doc.text(`Préstamo interno: ${fmtCOP(l.prestamo)}`, 14, y); y+=6;
+    doc.text(`Salud: ${fmtCOP(l.salud)}`, 14, y); y+=6;
+    doc.text(`Pensión: ${fmtCOP(l.pension)}`, 14, y); y+=6;
+    doc.text(`Otros descuentos: ${fmtCOP(l.otrosDescuentos)}`, 14, y); y+=6;
+    doc.text(`Total descuentos: ${fmtCOP(l.totalDescuentos)}`, 14, y); y+=8;
+  }
+  doc.setFontSize(13); doc.text(`Total a pagar: ${fmtCOP(l.totalPagar)}`, 14, y); y+=12;
+  doc.setFontSize(9); doc.setTextColor(120);
+  doc.text(`Liquidado por ${l.liquidadoPor} el ${l.creadoEnLabel||''}`, 14, y);
+  doc.save(`liquidacion_${l.empleadoNombre.replace(/\s+/g,'_')}_${l.mes}.pdf`);
+}
+function descargarLiquidacionesPDF(){
+  const mesFiltro = document.getElementById('liq-mes-filtro').value || mesISO();
+  const delMes = cache.liquidaciones.filter(l=>l.mes===mesFiltro);
+  if(!delMes.length){ toast('No hay liquidaciones para ese mes.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape'});
+  doc.setFontSize(14); doc.text(`Masillas Colombia — Nómina consolidada ${mesFiltro}`, 14, 15);
+  const filas = delMes.map(l=>[l.empleadoNombre, l.diasTrabajados, fmtCOP(l.salarioBase), fmtCOP(l.totalDevengado), fmtCOP(l.totalDescuentos), fmtCOP(l.totalPagar)]);
+  doc.autoTable({ startY: 22, head:[['Empleado','Días','Salario base','Devengado','Descuentos','Total a pagar']], body: filas, styles:{fontSize:9} });
+  const total = delMes.reduce((s,l)=>s+l.totalPagar,0);
+  doc.setFontSize(11);
+  doc.text(`Total nómina del mes: ${fmtCOP(total)}`, 14, doc.lastAutoTable.finalY + 10);
+  doc.save(`nomina_${mesFiltro}.pdf`);
+}
+function descargarLiquidacionesExcel(){
+  const mesFiltro = document.getElementById('liq-mes-filtro').value || mesISO();
+  const delMes = cache.liquidaciones.filter(l=>l.mes===mesFiltro);
+  if(!delMes.length){ toast('No hay liquidaciones para ese mes.'); return; }
+  const filas = delMes.map(l=>({
+    Empleado: l.empleadoNombre, 'Días trabajados': l.diasTrabajados, 'Salario base': l.salarioBase,
+    Comisiones: l.comisiones, 'Horas extra': l.horasExtra, 'Auxilio transporte': l.auxTransporte,
+    'Total devengado': l.totalDevengado, 'Total descuentos': l.totalDescuentos, 'Total a pagar': l.totalPagar
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Nómina');
+  XLSX.writeFile(wb, `nomina_${mesFiltro}.xlsx`);
+}
+
+/* ============ CARTERA 14 ============ */
+function renderCartera14(){
+  const el = document.getElementById('tabla-cartera14');
+  if(!el) return;
+  const pendientes = cache.pedidos.filter(p=>p.formaPago==='cartera14' && !p.facturado14);
+  if(!pendientes.length){ el.innerHTML = '<p class="empty">No hay pedidos en Cartera 14 pendientes de cobro.</p>'; return; }
+  const grupos = {};
+  pendientes.forEach(p=>{ grupos[p.clienteId] = grupos[p.clienteId] || { clienteNombre:p.clienteNombre, pedidos:[] }; grupos[p.clienteId].pedidos.push(p); });
+  el.innerHTML = Object.entries(grupos).map(([clienteId, g])=>{
+    const total = g.pedidos.reduce((s,p)=>s+p.valorTotal,0);
+    const bolsas = g.pedidos.reduce((s,p)=>s+p.cantidad,0);
+    return `<div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">${g.clienteNombre} <span style="font-weight:400;font-size:.78rem;color:var(--ink-soft);">(${g.pedidos.length} pedidos · ${bolsas} bolsas · ${fmtCOP(total)})</span></h3>
+        <button class="primary small" onclick="generarCobroCartera14('${clienteId}')">Generar cobro consolidado</button>
+      </div>
+      <table><thead><tr><th>Fecha</th><th>Orden física</th><th>Bolsas</th><th>Valor</th></tr></thead><tbody>
+        ${g.pedidos.map(p=>`<tr><td>${p.fechaProgramada||'—'}</td><td>${p.numeroOrdenCompra||'—'}</td><td>${p.cantidad}</td><td>${fmtCOP(p.valorTotal)}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }).join('');
+}
+async function generarCobroCartera14(clienteId){
+  const pendientes = cache.pedidos.filter(p=>p.formaPago==='cartera14' && !p.facturado14 && p.clienteId===clienteId);
+  if(!pendientes.length){ toast('No hay pedidos pendientes para este cliente.'); return; }
+  const total = pendientes.reduce((s,p)=>s+p.valorTotal,0);
+  if(!confirm(`¿Generar un único cobro de ${fmtCOP(total)} por ${pendientes.length} pedidos de ${pendientes[0].clienteNombre}?`)) return;
+  const metodo = prompt('¿Cómo se recibió el pago? Escribe "efectivo" o "transferencia":', 'transferencia');
+  if(!metodo || !['efectivo','transferencia'].includes(metodo.trim().toLowerCase())){ toast('Debes indicar efectivo o transferencia.'); return; }
+  const metodoFinal = metodo.trim().toLowerCase();
+  const batch = db.batch();
+  pendientes.forEach(p=>{
+    const ref = db.collection('pedidos').doc(p.id);
+    batch.update(ref, {
+      facturado14: true,
+      abonos: [{ monto: p.valorTotal, metodo: metodoFinal, fecha: nowLabel(), fechaISO: hoyISO() }]
+    });
+  });
+  await batch.commit();
+  await registrarHistorial('Cobro consolidado Cartera 14', `${pendientes[0].clienteNombre} — ${pendientes.length} pedidos — ${fmtCOP(total)} (${metodoFinal})`);
+  toast('Cobro consolidado generado.');
+}
+
+/* ============ BALANCES ============ */
+function cambiarTipoFiltroBalance(){
+  const tipo = document.getElementById('bal-tipo-filtro').value;
+  document.getElementById('bal-filtro-dia-wrap').style.display = tipo==='dia' ? 'block':'none';
+  document.getElementById('bal-filtro-mes-wrap').style.display = tipo==='mes' ? 'block':'none';
+  document.getElementById('bal-filtro-anio-wrap').style.display = tipo==='anio' ? 'block':'none';
+  renderBalances();
+}
+function pedidosEnPeriodoBalance(){
+  const tipo = document.getElementById('bal-tipo-filtro')?.value || 'dia';
+  let prefijo;
+  if(tipo==='dia'){
+    const el = document.getElementById('bal-filtro-dia');
+    if(el && !el.value) el.value = hoyISO();
+    prefijo = el ? el.value : hoyISO();
+  } else if(tipo==='mes'){
+    const el = document.getElementById('bal-filtro-mes');
+    if(el && !el.value) el.value = mesISO();
+    prefijo = el ? el.value : mesISO();
+  } else {
+    const el = document.getElementById('bal-filtro-anio');
+    if(el && !el.value) el.value = new Date().getFullYear();
+    prefijo = el ? String(el.value) : String(new Date().getFullYear());
+  }
+  return { prefijo, pedidos: cache.pedidos.filter(p=>p.fechaProgramada && p.fechaProgramada.startsWith(prefijo)) };
+}
+function renderBalances(){
+  const box = document.getElementById('bal-pedidos');
+  if(!box) return;
+  const { prefijo, pedidos } = pedidosEnPeriodoBalance();
+
+  const bolsas = pedidos.reduce((s,p)=>s+p.cantidad,0);
+  const ventas = pedidos.reduce((s,p)=>s+p.valorTotal,0);
+  const abonosPeriodo = [];
+  cache.pedidos.forEach(p=>(p.abonos||[]).forEach(a=>{ if(a.fechaISO && a.fechaISO.startsWith(prefijo)) abonosPeriodo.push(a); }));
+  const ingresos = abonosPeriodo.reduce((s,a)=>s+a.monto,0);
+  const egresosPeriodo = cache.egresos.filter(e=>e.fechaISO && e.fechaISO.startsWith(prefijo)).reduce((s,e)=>s+e.valor,0);
+
+  document.getElementById('bal-pedidos').textContent = pedidos.length;
+  document.getElementById('bal-bolsas').textContent = bolsas;
+  document.getElementById('bal-ventas').textContent = fmtCOP(ventas);
+  document.getElementById('bal-ingresos').textContent = fmtCOP(ingresos);
+  document.getElementById('bal-egresos').textContent = fmtCOP(egresosPeriodo);
+  document.getElementById('bal-neto').textContent = fmtCOP(ingresos - egresosPeriodo);
+
+  document.getElementById('bal-entregas-ok').textContent = pedidos.filter(p=>p.estado==='entregado').length;
+  document.getElementById('bal-entregas-novedad').textContent = pedidos.filter(p=>p.estado==='no_entregado').length;
+  const clientesPeriodo = new Set(pedidos.map(p=>p.clienteId));
+  document.getElementById('bal-clientes-activos').textContent = clientesPeriodo.size;
+  const clientesNuevos = cache.clientes.filter(c=>{
+    const primerPedido = cache.pedidos.filter(p=>p.clienteId===c.id).sort((a,b)=>(a.fechaProgramada||'').localeCompare(b.fechaProgramada||''))[0];
+    return primerPedido && primerPedido.fechaProgramada && primerPedido.fechaProgramada.startsWith(prefijo);
+  }).length;
+  document.getElementById('bal-clientes-nuevos').textContent = clientesNuevos;
+
+  const porDia = {};
+  pedidos.forEach(p=>{ porDia[p.fechaProgramada] = (porDia[p.fechaProgramada]||0) + p.valorTotal; });
+  const dias = Object.keys(porDia).sort();
+  const canvasEl = document.getElementById('bal-grafico');
+  if(canvasEl && window.Chart){
+    if(balanceChartInstance) balanceChartInstance.destroy();
+    balanceChartInstance = new Chart(canvasEl.getContext('2d'), {
+      type:'bar',
+      data:{ labels: dias, datasets:[{ label:'Ventas (COP)', data: dias.map(d=>porDia[d]), backgroundColor:'#1E3245' }] },
+      options:{ responsive:true, plugins:{legend:{display:false}} }
+    });
+  }
+
+  const detalle = document.getElementById('tabla-balance-detalle');
+  detalle.innerHTML = pedidos.length
+    ? `<table><thead><tr><th>Fecha</th><th>Cliente</th><th>Bolsas</th><th>Valor</th><th>Estado</th></tr></thead><tbody>
+        ${pedidos.map(p=>`<tr><td>${p.fechaProgramada}</td><td>${p.clienteNombre}</td><td>${p.cantidad}</td><td>${fmtCOP(p.valorTotal)}</td><td><span class="badge ${p.estado}">${ESTADO_LABEL[p.estado]}</span></td></tr>`).join('')}
+      </tbody></table>`
+    : '<p class="empty">Sin movimientos en este periodo.</p>';
+}
+function descargarBalanceExcel(){
+  const { prefijo, pedidos } = pedidosEnPeriodoBalance();
+  if(!pedidos.length){ toast('No hay datos para exportar en este periodo.'); return; }
+  const filas = pedidos.map(p=>({ Fecha: p.fechaProgramada, Cliente: p.clienteNombre, Bolsas: p.cantidad, Valor: p.valorTotal, Estado: ESTADO_LABEL[p.estado] }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Balance');
+  XLSX.writeFile(wb, `balance_masicolpos_${prefijo}.xlsx`);
+}
+function descargarBalancePDF(){
+  const { prefijo, pedidos } = pedidosEnPeriodoBalance();
+  if(!pedidos.length){ toast('No hay datos para exportar en este periodo.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape'});
+  doc.setFontSize(14); doc.text(`Masillas Colombia — Balance del periodo ${prefijo}`, 14, 15);
+  const filas = pedidos.map(p=>[p.fechaProgramada, p.clienteNombre, p.cantidad, fmtCOP(p.valorTotal), ESTADO_LABEL[p.estado]]);
+  doc.autoTable({ startY: 22, head:[['Fecha','Cliente','Bolsas','Valor','Estado']], body: filas, styles:{fontSize:9} });
+  doc.save(`balance_${prefijo}.pdf`);
 }
 </script>
 </body>
