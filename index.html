@@ -582,7 +582,13 @@
           </div>
           <button class="primary" onclick="crearUsuario()">Crear usuario</button>
         </div>
-        <div class="card"><h3>Usuarios existentes</h3><div id="tabla-usuarios"></div></div>
+        <div class="card">
+          <div class="toolbar">
+            <h3 style="margin:0;">Usuarios existentes</h3>
+            <button class="ghost small" onclick="descargarUsuariosExcel()">Descargar listado (Excel)</button>
+          </div>
+          <div id="tabla-usuarios"></div>
+        </div>
       </section>
 
       <!-- HISTORIAL -->
@@ -1209,6 +1215,14 @@ function renderUsuarios(){
     ${cache.usuarios.map(u=>`<tr><td>${u.nombre}</td><td>${u.usuario}</td><td>${ROLE_LABEL[u.rol]||u.rol}</td>
       <td><button class="ghost small" onclick="abrirEditarUsuario('${u.id}')">Editar</button> <button class="danger small" onclick="eliminarUsuario('${u.id}','${u.nombre.replace(/'/g,"")}')">Eliminar</button></td></tr>`).join('')}
   </tbody></table>`;
+}
+function descargarUsuariosExcel(){
+  if(!cache.usuarios.length){ toast('No hay usuarios para exportar.'); return; }
+  const filas = cache.usuarios.map(u=>({ Nombre: u.nombre, Usuario: u.usuario, Rol: ROLE_LABEL[u.rol] || u.rol }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
+  XLSX.writeFile(wb, `usuarios_masicolpos_${hoyISO()}.xlsx`);
 }
 function abrirEditarUsuario(id){
   const u = cache.usuarios.find(x=>x.id===id);
