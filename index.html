@@ -766,15 +766,36 @@
     <input type="hidden" id="ed-pedido-id">
     <div class="grid2">
       <div class="field"><label>N.º orden de compra / consecutivo físico</label><input id="ed-orden-compra" type="text" inputmode="numeric"></div>
+      <div class="field"><label>Dirección de entrega</label><input id="ed-direccion"></div>
+    </div>
+    <div class="grid2">
       <div class="field"><label>Cantidad de bolsas</label><input id="ed-cantidad" type="number" min="1"></div>
       <div class="field"><label>Valor por bolsa (COP)</label><input id="ed-valorbolsa" type="number" min="0"></div>
     </div>
-    <div class="field"><label>Estado</label>
-      <select id="ed-estado">
-        <option value="entregado">Entregado</option><option value="no_entregado">No entregado</option>
-        <option value="programado">Programado</option><option value="en_ruta">En ruta</option>
-      </select>
+    <div class="grid2">
+      <div class="field"><label>Fecha programada</label><input id="ed-fecha" type="date"></div>
+      <div class="field"><label>Estado</label>
+        <select id="ed-estado">
+          <option value="entregado">Entregado</option><option value="no_entregado">No entregado</option>
+          <option value="programado">Programado</option><option value="en_ruta">En ruta</option>
+        </select>
+      </div>
     </div>
+    <div class="grid2">
+      <div class="field"><label>Forma de pago</label>
+        <select id="ed-formapago" onchange="toggleEdCuotas()">
+          <option value="efectivo">Efectivo</option>
+          <option value="transferencia">Transferencia bancaria</option>
+          <option value="credito">Crédito</option>
+          <option value="cartera14">Cartera 14</option>
+        </select>
+      </div>
+      <div class="field" id="ed-cuotas-wrap" style="display:none;"><label>Número de cuotas</label><select id="ed-cuotas"></select></div>
+    </div>
+    <div class="field"><label>Reasignar a repartidor</label>
+      <select id="ed-asignado"><option value="">Sin asignar</option></select>
+    </div>
+    <label class="checkbox-label field"><input type="checkbox" id="ed-facturar"> Facturar electrónicamente (DIAN)</label>
     <label class="checkbox-label field"><input type="checkbox" id="ed-reset-abonos"> Reiniciar pagos/abonos registrados en este pedido</label>
     <div class="field"><label>Motivo del cambio (obligatorio)</label><textarea id="ed-motivo" rows="2"></textarea></div>
     <div class="modal-actions">
@@ -1676,14 +1697,31 @@ async function guardarAbono(){
 }
 
 /* ============ EDICIÓN / CORRECCIÓN SÚPER ADMIN ============ */
+function toggleEdCuotas(){
+  const sel = document.getElementById('ed-cuotas');
+  if(!sel.options.length){ for(let i=2;i<=10;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i+' cuotas'; sel.appendChild(o); } }
+  document.getElementById('ed-cuotas-wrap').style.display = document.getElementById('ed-formapago').value==='credito' ? 'block':'none';
+}
 function abrirEdicionSuperadmin(pedidoId){
   const p = cache.pedidos.find(x=>x.id===pedidoId);
   if(!p){ toast('Ese pedido ya no existe.'); return; }
   document.getElementById('ed-pedido-id').value = pedidoId;
   document.getElementById('ed-orden-compra').value = p.numeroOrdenCompra || '';
+  document.getElementById('ed-direccion').value = p.direccion || '';
   document.getElementById('ed-cantidad').value = p.cantidad;
   document.getElementById('ed-valorbolsa').value = p.valorBolsa;
+  document.getElementById('ed-fecha').value = p.fechaProgramada || '';
   document.getElementById('ed-estado').value = p.estado;
+  document.getElementById('ed-formapago').value = p.formaPago;
+  toggleEdCuotas();
+  if(p.formaPago==='credito') document.getElementById('ed-cuotas').value = p.numCuotas || 2;
+
+  const selAsignado = document.getElementById('ed-asignado');
+  const repartidores = cache.usuarios.filter(u=>u.rol==='domiciliario');
+  selAsignado.innerHTML = '<option value="">Sin asignar</option>' + repartidores.map(r=>`<option value="${r.id}">${r.nombre}</option>`).join('');
+  selAsignado.value = p.asignadoA || '';
+
+  document.getElementById('ed-facturar').checked = !!p.facturarElectronico;
   document.getElementById('ed-reset-abonos').checked = false;
   document.getElementById('ed-motivo').value = '';
   abrirModal('modal-editar-superadmin');
@@ -1691,20 +1729,51 @@ function abrirEdicionSuperadmin(pedidoId){
 async function guardarEdicionSuperadmin(){
   const id = document.getElementById('ed-pedido-id').value;
   const nuevoNumeroOrden = document.getElementById('ed-orden-compra').value.trim();
+  const nuevaDireccion = document.getElementById('ed-direccion').value.trim();
   const nuevaCantidad = parseInt(document.getElementById('ed-cantidad').value);
   const nuevoValorBolsa = parseFloat(document.getElementById('ed-valorbolsa').value);
+  const nuevaFecha = document.getElementById('ed-fecha').value;
   const nuevoEstado = document.getElementById('ed-estado').value;
+  const nuevaFormaPago = document.getElementById('ed-formapago').value;
+  const nuevasCuotas = nuevaFormaPago==='credito' ? parseInt(document.getElementById('ed-cuotas').value) : null;
+  const nuevoAsignadoA = document.getElementById('ed-asignado').value;
+  const nuevoFacturar = document.getElementById('ed-facturar').checked;
   const motivo = document.getElementById('ed-motivo').value.trim();
   const resetAbonos = document.getElementById('ed-reset-abonos').checked;
   const p = cache.pedidos.find(x=>x.id===id);
   if(!motivo){ toast('El motivo es obligatorio para este cambio.'); return; }
   if(!nuevoNumeroOrden){ toast('El número de la orden / consecutivo físico es obligatorio.'); return; }
-  const update = { numeroOrdenCompra: nuevoNumeroOrden, cantidad: nuevaCantidad, valorBolsa: nuevoValorBolsa, valorTotal: nuevaCantidad*nuevoValorBolsa, estado: nuevoEstado };
+  if(!nuevaDireccion){ toast('La dirección de entrega es obligatoria.'); return; }
+
+  const nuevoAsignadoUsuario = cache.usuarios.find(u=>u.id===nuevoAsignadoA);
+  const update = {
+    numeroOrdenCompra: nuevoNumeroOrden, direccion: nuevaDireccion,
+    cantidad: nuevaCantidad, valorBolsa: nuevoValorBolsa, valorTotal: nuevaCantidad*nuevoValorBolsa,
+    fechaProgramada: nuevaFecha, estado: nuevoEstado,
+    formaPago: nuevaFormaPago, numCuotas: nuevasCuotas,
+    asignadoA: nuevoAsignadoA || null, asignadoNombre: nuevoAsignadoUsuario ? nuevoAsignadoUsuario.nombre : null,
+    facturarElectronico: nuevoFacturar
+  };
   if(resetAbonos) update.abonos = [];
   await db.collection('pedidos').doc(id).update(update);
-  await registrarHistorial('Edición de súper admin',
-    `${p.clienteNombre}: orden ${p.numeroOrdenCompra||'sin consecutivo'}→${nuevoNumeroOrden}, cantidad ${p.cantidad}→${nuevaCantidad}, valor/bolsa ${fmtCOP(p.valorBolsa)}→${fmtCOP(nuevoValorBolsa)}, estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}${resetAbonos?' · pagos reiniciados':''}. Motivo: ${motivo}`,
-    {refType:'pedido', refId:id});
+
+  const cambios = [];
+  if(p.numeroOrdenCompra !== nuevoNumeroOrden) cambios.push(`orden ${p.numeroOrdenCompra||'sin consecutivo'}→${nuevoNumeroOrden}`);
+  if(p.direccion !== nuevaDireccion) cambios.push(`dirección "${p.direccion}"→"${nuevaDireccion}"`);
+  if(p.cantidad !== nuevaCantidad) cambios.push(`cantidad ${p.cantidad}→${nuevaCantidad}`);
+  if(p.valorBolsa !== nuevoValorBolsa) cambios.push(`valor/bolsa ${fmtCOP(p.valorBolsa)}→${fmtCOP(nuevoValorBolsa)}`);
+  if(p.fechaProgramada !== nuevaFecha) cambios.push(`fecha ${p.fechaProgramada||'—'}→${nuevaFecha}`);
+  if(p.estado !== nuevoEstado) cambios.push(`estado ${ESTADO_LABEL[p.estado]}→${ESTADO_LABEL[nuevoEstado]}`);
+  if(p.formaPago !== nuevaFormaPago) cambios.push(`pago ${PAGO_LABEL[p.formaPago]}→${PAGO_LABEL[nuevaFormaPago]}`);
+  if((p.asignadoA||'') !== (nuevoAsignadoA||'')) cambios.push(`repartidor ${p.asignadoNombre||'sin asignar'}→${update.asignadoNombre||'sin asignar'}`);
+  if(!!p.facturarElectronico !== nuevoFacturar) cambios.push(`facturación electrónica ${p.facturarElectronico?'sí':'no'}→${nuevoFacturar?'sí':'no'}`);
+  if(resetAbonos) cambios.push('pagos reiniciados');
+
+  await registrarHistorial('Edición de súper admin', `${p.clienteNombre}: ${cambios.join(', ')||'sin cambios de datos'}. Motivo: ${motivo}`, {refType:'pedido', refId:id});
+
+  if(nuevoAsignadoA && nuevoAsignadoA !== p.asignadoA){
+    await crearNotificacion(nuevoAsignadoA, `Se te reasignó el pedido de ${p.clienteNombre} — ${nuevaCantidad} bolsas — ${nuevaDireccion}`, id);
+  }
   toast('Cambio guardado y registrado en el historial.');
   cerrarModal('modal-editar-superadmin');
 }
